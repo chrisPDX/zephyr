@@ -13,4 +13,7 @@ supported:
   - gpio
   - usb_device
   - watchdog
+  - counter
   - adc
+  - dac
+  - backup_sram

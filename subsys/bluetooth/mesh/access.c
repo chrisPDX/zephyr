@@ -8,6 +8,7 @@
 
 #include <zephyr.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <sys/util.h>
 #include <sys/byteorder.h>
 
@@ -26,9 +27,29 @@
 #include "transport.h"
 #include "access.h"
 #include "foundation.h"
+#include "settings.h"
+
+/* bt_mesh_model.flags */
+enum {
+	BT_MESH_MOD_BIND_PENDING = BIT(0),
+	BT_MESH_MOD_SUB_PENDING = BIT(1),
+	BT_MESH_MOD_PUB_PENDING = BIT(2),
+	BT_MESH_MOD_NEXT_IS_PARENT = BIT(3),
+};
+
+/* Model publication information for persistent storage. */
+struct mod_pub_val {
+	uint16_t addr;
+	uint16_t key;
+	uint8_t  ttl;
+	uint8_t  retransmit;
+	uint8_t  period;
+	uint8_t  period_div:4,
+		 cred:1;
+};
 
 static const struct bt_mesh_comp *dev_comp;
-static u16_t dev_primary_addr;
+static uint16_t dev_primary_addr;
 
 void bt_mesh_model_foreach(void (*func)(struct bt_mesh_model *mod,
 					struct bt_mesh_elem *elem,
@@ -55,9 +76,9 @@ void bt_mesh_model_foreach(void (*func)(struct bt_mesh_model *mod,
 	}
 }
 
-s32_t bt_mesh_model_pub_period_get(struct bt_mesh_model *mod)
+int32_t bt_mesh_model_pub_period_get(struct bt_mesh_model *mod)
 {
-	s32_t period;
+	int32_t period;
 
 	if (!mod->pub) {
 		return 0;
@@ -91,10 +112,10 @@ s32_t bt_mesh_model_pub_period_get(struct bt_mesh_model *mod)
 	}
 }
 
-static s32_t next_period(struct bt_mesh_model *mod)
+static int32_t next_period(struct bt_mesh_model *mod)
 {
 	struct bt_mesh_model_pub *pub = mod->pub;
-	u32_t elapsed, period;
+	uint32_t elapsed, period;
 
 	period = bt_mesh_model_pub_period_get(mod);
 	if (!period) {
@@ -117,7 +138,7 @@ static s32_t next_period(struct bt_mesh_model *mod)
 static void publish_sent(int err, void *user_data)
 {
 	struct bt_mesh_model *mod = user_data;
-	s32_t delay;
+	int32_t delay;
 
 	BT_DBG("err %d", err);
 
@@ -133,7 +154,7 @@ static void publish_sent(int err, void *user_data)
 	}
 }
 
-static void publish_start(u16_t duration, int err, void *user_data)
+static void publish_start(uint16_t duration, int err, void *user_data)
 {
 	struct bt_mesh_model *mod = user_data;
 	struct bt_mesh_model_pub *pub = mod->pub;
@@ -158,27 +179,16 @@ static int publish_retransmit(struct bt_mesh_model *mod)
 {
 	NET_BUF_SIMPLE_DEFINE(sdu, BT_MESH_TX_SDU_MAX);
 	struct bt_mesh_model_pub *pub = mod->pub;
-	struct bt_mesh_app_key *key;
 	struct bt_mesh_msg_ctx ctx = {
 		.addr = pub->addr,
 		.send_ttl = pub->ttl,
+		.app_idx = pub->key,
 	};
 	struct bt_mesh_net_tx tx = {
 		.ctx = &ctx,
 		.src = bt_mesh_model_elem(mod)->addr,
-		.xmit = bt_mesh_net_transmit_get(),
 		.friend_cred = pub->cred,
 	};
-
-	key = bt_mesh_app_key_find(pub->key);
-	if (!key) {
-		return -EADDRNOTAVAIL;
-	}
-
-	tx.sub = bt_mesh_subnet_get(key->net_idx);
-
-	ctx.net_idx = key->net_idx;
-	ctx.app_idx = key->app_idx;
 
 	net_buf_simple_add_mem(&sdu, pub->msg->data, pub->msg->len);
 
@@ -200,7 +210,7 @@ static void mod_publish(struct k_work *work)
 	struct bt_mesh_model_pub *pub = CONTAINER_OF(work,
 						     struct bt_mesh_model_pub,
 						     timer.work);
-	s32_t period_ms;
+	int32_t period_ms;
 	int err;
 
 	BT_DBG("");
@@ -251,7 +261,7 @@ struct bt_mesh_elem *bt_mesh_model_elem(struct bt_mesh_model *mod)
 	return &dev_comp->elem[mod->elem_idx];
 }
 
-struct bt_mesh_model *bt_mesh_model_get(bool vnd, u8_t elem_idx, u8_t mod_idx)
+struct bt_mesh_model *bt_mesh_model_get(bool vnd, uint8_t elem_idx, uint8_t mod_idx)
 {
 	struct bt_mesh_elem *elem;
 
@@ -327,7 +337,7 @@ int bt_mesh_comp_register(const struct bt_mesh_comp *comp)
 	return err;
 }
 
-void bt_mesh_comp_provision(u16_t addr)
+void bt_mesh_comp_provision(uint16_t addr)
 {
 	int i;
 
@@ -352,12 +362,12 @@ void bt_mesh_comp_unprovision(void)
 	dev_primary_addr = BT_MESH_ADDR_UNASSIGNED;
 }
 
-u16_t bt_mesh_primary_addr(void)
+uint16_t bt_mesh_primary_addr(void)
 {
 	return dev_primary_addr;
 }
 
-static u16_t *model_group_get(struct bt_mesh_model *mod, u16_t addr)
+static uint16_t *model_group_get(struct bt_mesh_model *mod, uint16_t addr)
 {
 	int i;
 
@@ -371,13 +381,13 @@ static u16_t *model_group_get(struct bt_mesh_model *mod, u16_t addr)
 }
 
 struct find_group_visitor_ctx {
-	u16_t *entry;
+	uint16_t *entry;
 	struct bt_mesh_model *mod;
-	u16_t addr;
+	uint16_t addr;
 };
 
 static enum bt_mesh_walk find_group_mod_visitor(struct bt_mesh_model *mod,
-						u32_t depth, void *user_data)
+						uint32_t depth, void *user_data)
 {
 	struct find_group_visitor_ctx *ctx = user_data;
 
@@ -394,7 +404,7 @@ static enum bt_mesh_walk find_group_mod_visitor(struct bt_mesh_model *mod,
 	return BT_MESH_WALK_CONTINUE;
 }
 
-u16_t *bt_mesh_model_find_group(struct bt_mesh_model **mod, u16_t addr)
+uint16_t *bt_mesh_model_find_group(struct bt_mesh_model **mod, uint16_t addr)
 {
 	struct find_group_visitor_ctx ctx = {
 		.mod = *mod,
@@ -410,10 +420,10 @@ u16_t *bt_mesh_model_find_group(struct bt_mesh_model **mod, u16_t addr)
 }
 
 static struct bt_mesh_model *bt_mesh_elem_find_group(struct bt_mesh_elem *elem,
-						     u16_t group_addr)
+						     uint16_t group_addr)
 {
 	struct bt_mesh_model *model;
-	u16_t *match;
+	uint16_t *match;
 	int i;
 
 	for (i = 0; i < elem->model_count; i++) {
@@ -437,9 +447,9 @@ static struct bt_mesh_model *bt_mesh_elem_find_group(struct bt_mesh_elem *elem,
 	return NULL;
 }
 
-struct bt_mesh_elem *bt_mesh_elem_find(u16_t addr)
+struct bt_mesh_elem *bt_mesh_elem_find(uint16_t addr)
 {
-	u16_t index;
+	uint16_t index;
 
 	if (BT_MESH_ADDR_IS_UNICAST(addr)) {
 		index = (addr - dev_comp->elem[0].addr);
@@ -461,12 +471,12 @@ struct bt_mesh_elem *bt_mesh_elem_find(u16_t addr)
 	return NULL;
 }
 
-u8_t bt_mesh_elem_count(void)
+uint8_t bt_mesh_elem_count(void)
 {
 	return dev_comp->elem_count;
 }
 
-static bool model_has_key(struct bt_mesh_model *mod, u16_t key)
+static bool model_has_key(struct bt_mesh_model *mod, uint16_t key)
 {
 	int i;
 
@@ -481,7 +491,7 @@ static bool model_has_key(struct bt_mesh_model *mod, u16_t key)
 	return false;
 }
 
-static bool model_has_dst(struct bt_mesh_model *mod, u16_t dst)
+static bool model_has_dst(struct bt_mesh_model *mod, uint16_t dst)
 {
 	if (BT_MESH_ADDR_IS_UNICAST(dst)) {
 		return (dev_comp->elem[mod->elem_idx].addr == dst);
@@ -489,14 +499,18 @@ static bool model_has_dst(struct bt_mesh_model *mod, u16_t dst)
 		return !!bt_mesh_model_find_group(&mod, dst);
 	}
 
-	return (mod->elem_idx == 0 && bt_mesh_fixed_group_match(dst));
+	/* If a message with a fixed group address is sent to the access layer,
+	 * the lower layers have already confirmed that we are subscribing to
+	 * it. All models on the primary element should receive the message.
+	 */
+	return mod->elem_idx == 0;
 }
 
 static const struct bt_mesh_model_op *find_op(struct bt_mesh_model *models,
-					      u8_t model_count, u32_t opcode,
+					      uint8_t model_count, uint32_t opcode,
 					      struct bt_mesh_model **model)
 {
-	u8_t i;
+	uint8_t i;
 
 	for (i = 0U; i < model_count; i++) {
 		const struct bt_mesh_model_op *op;
@@ -514,7 +528,7 @@ static const struct bt_mesh_model_op *find_op(struct bt_mesh_model *models,
 	return NULL;
 }
 
-static int get_opcode(struct net_buf_simple *buf, u32_t *opcode)
+static int get_opcode(struct net_buf_simple *buf, uint32_t *opcode)
 {
 	switch (buf->data[0] >> 6) {
 	case 0x00:
@@ -552,29 +566,12 @@ static int get_opcode(struct net_buf_simple *buf, u32_t *opcode)
 	CODE_UNREACHABLE;
 }
 
-bool bt_mesh_fixed_group_match(u16_t addr)
-{
-	/* Check for fixed group addresses */
-	switch (addr) {
-	case BT_MESH_ADDR_ALL_NODES:
-		return true;
-	case BT_MESH_ADDR_PROXIES:
-		return (bt_mesh_gatt_proxy_get() == BT_MESH_GATT_PROXY_ENABLED);
-	case BT_MESH_ADDR_FRIENDS:
-		return (bt_mesh_friend_get() == BT_MESH_FRIEND_ENABLED);
-	case BT_MESH_ADDR_RELAYS:
-		return (bt_mesh_relay_get() == BT_MESH_RELAY_ENABLED);
-	default:
-		return false;
-	}
-}
-
 void bt_mesh_model_recv(struct bt_mesh_net_rx *rx, struct net_buf_simple *buf)
 {
 	struct bt_mesh_model *models, *model;
 	const struct bt_mesh_model_op *op;
-	u32_t opcode;
-	u8_t count;
+	uint32_t opcode;
+	uint8_t count;
 	int i;
 
 	BT_DBG("app_idx 0x%04x src 0x%04x dst 0x%04x", rx->ctx.app_idx,
@@ -633,7 +630,7 @@ void bt_mesh_model_recv(struct bt_mesh_net_rx *rx, struct net_buf_simple *buf)
 	}
 }
 
-void bt_mesh_model_msg_init(struct net_buf_simple *msg, u32_t opcode)
+void bt_mesh_model_msg_init(struct net_buf_simple *msg, uint32_t opcode)
 {
 	net_buf_simple_init(msg, 0);
 
@@ -695,24 +692,9 @@ int bt_mesh_model_send(struct bt_mesh_model *model,
 		       struct net_buf_simple *msg,
 		       const struct bt_mesh_send_cb *cb, void *cb_data)
 {
-	struct bt_mesh_app_key *app_key;
-
-	if (!BT_MESH_IS_DEV_KEY(ctx->app_idx)) {
-		app_key = bt_mesh_app_key_find(ctx->app_idx);
-		if (!app_key) {
-			BT_ERR("Unknown app_idx 0x%04x", ctx->app_idx);
-			return -EINVAL;
-		}
-
-		ctx->net_idx = app_key->net_idx;
-	}
-
 	struct bt_mesh_net_tx tx = {
-		.sub = bt_mesh_subnet_get(ctx->net_idx),
 		.ctx = ctx,
 		.src = bt_mesh_model_elem(model)->addr,
-		.xmit = bt_mesh_net_transmit_get(),
-		.friend_cred = 0,
 	};
 
 	return model_send(model, &tx, false, msg, cb, cb_data);
@@ -722,28 +704,26 @@ int bt_mesh_model_publish(struct bt_mesh_model *model)
 {
 	NET_BUF_SIMPLE_DEFINE(sdu, BT_MESH_TX_SDU_MAX);
 	struct bt_mesh_model_pub *pub = model->pub;
-	struct bt_mesh_app_key *key;
-	struct bt_mesh_msg_ctx ctx = {
-	};
-	struct bt_mesh_net_tx tx = {
-		.ctx = &ctx,
-		.src = bt_mesh_model_elem(model)->addr,
-		.xmit = bt_mesh_net_transmit_get(),
-	};
-	int err;
-
-	BT_DBG("");
 
 	if (!pub) {
 		return -ENOTSUP;
 	}
 
-	if (pub->addr == BT_MESH_ADDR_UNASSIGNED) {
-		return -EADDRNOTAVAIL;
-	}
+	struct bt_mesh_msg_ctx ctx = {
+		.addr = pub->addr,
+		.send_ttl = pub->ttl,
+		.send_rel = pub->send_rel,
+		.app_idx = pub->key,
+	};
+	struct bt_mesh_net_tx tx = {
+		.ctx = &ctx,
+		.src = bt_mesh_model_elem(model)->addr,
+	};
+	int err;
 
-	key = bt_mesh_app_key_find(pub->key);
-	if (!key) {
+	BT_DBG("");
+
+	if (pub->addr == BT_MESH_ADDR_UNASSIGNED) {
 		return -EADDRNOTAVAIL;
 	}
 
@@ -759,14 +739,7 @@ int bt_mesh_model_publish(struct bt_mesh_model *model)
 
 	net_buf_simple_add_mem(&sdu, pub->msg->data, pub->msg->len);
 
-	ctx.addr = pub->addr;
-	ctx.send_ttl = pub->ttl;
-	ctx.send_rel = pub->send_rel;
-	ctx.net_idx = key->net_idx;
-	ctx.app_idx = key->app_idx;
-
 	tx.friend_cred = pub->cred;
-	tx.sub = bt_mesh_subnet_get(ctx.net_idx),
 
 	pub->count = BT_MESH_PUB_TRANSMIT_COUNT(pub->retransmit);
 
@@ -783,9 +756,9 @@ int bt_mesh_model_publish(struct bt_mesh_model *model)
 }
 
 struct bt_mesh_model *bt_mesh_model_find_vnd(const struct bt_mesh_elem *elem,
-					     u16_t company, u16_t id)
+					     uint16_t company, uint16_t id)
 {
-	u8_t i;
+	uint8_t i;
 
 	for (i = 0U; i < elem->vnd_model_count; i++) {
 		if (elem->vnd_models[i].vnd.company == company &&
@@ -798,9 +771,9 @@ struct bt_mesh_model *bt_mesh_model_find_vnd(const struct bt_mesh_elem *elem,
 }
 
 struct bt_mesh_model *bt_mesh_model_find(const struct bt_mesh_elem *elem,
-					 u16_t id)
+					 uint16_t id)
 {
-	u8_t i;
+	uint8_t i;
 
 	for (i = 0U; i < elem->model_count; i++) {
 		if (elem->models[i].id == id) {
@@ -828,29 +801,38 @@ struct bt_mesh_model *bt_mesh_model_root(struct bt_mesh_model *mod)
 
 void bt_mesh_model_tree_walk(struct bt_mesh_model *root,
 			     enum bt_mesh_walk (*cb)(struct bt_mesh_model *mod,
-						     u32_t depth,
+						     uint32_t depth,
 						     void *user_data),
 			     void *user_data)
 {
 	struct bt_mesh_model *m = root;
-	u32_t depth = 0;
+	int depth = 0;
+	/* 'skip' is set to true when we ascend from child to parent node.
+	 * In that case, we want to skip calling the callback on the parent
+	 * node and we don't want to descend onto a child node as those
+	 * nodes have already been visited.
+	 */
+	bool skip = false;
 
 	do {
-		if (cb(m, depth, user_data) == BT_MESH_WALK_STOP) {
+		if (!skip &&
+		    cb(m, (uint32_t)depth, user_data) == BT_MESH_WALK_STOP) {
 			return;
 		}
 #ifdef CONFIG_BT_MESH_MODEL_EXTENSIONS
-		if (m->extends) {
+		if (!skip && m->extends) {
 			m = m->extends;
 			depth++;
 		} else if (m->flags & BT_MESH_MOD_NEXT_IS_PARENT) {
-			m = m->next->next;
+			m = m->next;
 			depth--;
+			skip = true;
 		} else {
 			m = m->next;
+			skip = false;
 		}
 #endif
-	} while (m && m != root);
+	} while (m && depth > 0);
 }
 
 #ifdef CONFIG_BT_MESH_MODEL_EXTENSIONS
@@ -880,3 +862,393 @@ int bt_mesh_model_extend(struct bt_mesh_model *mod,
 	return 0;
 }
 #endif
+
+static int mod_set_bind(struct bt_mesh_model *mod, size_t len_rd,
+			settings_read_cb read_cb, void *cb_arg)
+{
+	ssize_t len;
+	int i;
+
+	/* Start with empty array regardless of cleared or set value */
+	for (i = 0; i < ARRAY_SIZE(mod->keys); i++) {
+		mod->keys[i] = BT_MESH_KEY_UNUSED;
+	}
+
+	if (len_rd == 0) {
+		BT_DBG("Cleared bindings for model");
+		return 0;
+	}
+
+	len = read_cb(cb_arg, mod->keys, sizeof(mod->keys));
+	if (len < 0) {
+		BT_ERR("Failed to read value (err %zd)", len);
+		return len;
+	}
+
+	BT_HEXDUMP_DBG(mod->keys, len, "val");
+
+	BT_DBG("Decoded %zu bound keys for model", len / sizeof(mod->keys[0]));
+	return 0;
+}
+
+static int mod_set_sub(struct bt_mesh_model *mod, size_t len_rd,
+		       settings_read_cb read_cb, void *cb_arg)
+{
+	ssize_t len;
+
+	/* Start with empty array regardless of cleared or set value */
+	(void)memset(mod->groups, 0, sizeof(mod->groups));
+
+	if (len_rd == 0) {
+		BT_DBG("Cleared subscriptions for model");
+		return 0;
+	}
+
+	len = read_cb(cb_arg, mod->groups, sizeof(mod->groups));
+	if (len < 0) {
+		BT_ERR("Failed to read value (err %zd)", len);
+		return len;
+	}
+
+	BT_HEXDUMP_DBG(mod->groups, len, "val");
+
+	BT_DBG("Decoded %zu subscribed group addresses for model",
+	       len / sizeof(mod->groups[0]));
+	return 0;
+}
+
+static int mod_set_pub(struct bt_mesh_model *mod, size_t len_rd,
+		       settings_read_cb read_cb, void *cb_arg)
+{
+	struct mod_pub_val pub;
+	int err;
+
+	if (!mod->pub) {
+		BT_WARN("Model has no publication context!");
+		return -EINVAL;
+	}
+
+	if (len_rd == 0) {
+		mod->pub->addr = BT_MESH_ADDR_UNASSIGNED;
+		mod->pub->key = 0U;
+		mod->pub->cred = 0U;
+		mod->pub->ttl = 0U;
+		mod->pub->period = 0U;
+		mod->pub->retransmit = 0U;
+		mod->pub->count = 0U;
+
+		BT_DBG("Cleared publication for model");
+		return 0;
+	}
+
+	if (!IS_ENABLED(CONFIG_BT_SETTINGS)) {
+		return 0;
+	}
+
+	err = bt_mesh_settings_set(read_cb, cb_arg, &pub, sizeof(pub));
+	if (err) {
+		BT_ERR("Failed to set \'model-pub\'");
+		return err;
+	}
+
+	mod->pub->addr = pub.addr;
+	mod->pub->key = pub.key;
+	mod->pub->cred = pub.cred;
+	mod->pub->ttl = pub.ttl;
+	mod->pub->period = pub.period;
+	mod->pub->retransmit = pub.retransmit;
+	mod->pub->period_div = pub.period_div;
+	mod->pub->count = 0U;
+
+	BT_DBG("Restored model publication, dst 0x%04x app_idx 0x%03x",
+	       pub.addr, pub.key);
+
+	return 0;
+}
+
+static int mod_data_set(struct bt_mesh_model *mod,
+			const char *name, size_t len_rd,
+			settings_read_cb read_cb, void *cb_arg)
+{
+	const char *next;
+
+	settings_name_next(name, &next);
+
+	if (mod->cb && mod->cb->settings_set) {
+		return mod->cb->settings_set(mod, next, len_rd,
+			read_cb, cb_arg);
+	}
+
+	return 0;
+}
+
+static int mod_set(bool vnd, const char *name, size_t len_rd,
+		   settings_read_cb read_cb, void *cb_arg)
+{
+	struct bt_mesh_model *mod;
+	uint8_t elem_idx, mod_idx;
+	uint16_t mod_key;
+	int len;
+	const char *next;
+
+	if (!name) {
+		BT_ERR("Insufficient number of arguments");
+		return -ENOENT;
+	}
+
+	mod_key = strtol(name, NULL, 16);
+	elem_idx = mod_key >> 8;
+	mod_idx = mod_key;
+
+	BT_DBG("Decoded mod_key 0x%04x as elem_idx %u mod_idx %u",
+	       mod_key, elem_idx, mod_idx);
+
+	mod = bt_mesh_model_get(vnd, elem_idx, mod_idx);
+	if (!mod) {
+		BT_ERR("Failed to get model for elem_idx %u mod_idx %u",
+		       elem_idx, mod_idx);
+		return -ENOENT;
+	}
+
+	len = settings_name_next(name, &next);
+
+	if (!next) {
+		BT_ERR("Insufficient number of arguments");
+		return -ENOENT;
+	}
+
+	if (!strncmp(next, "bind", len)) {
+		return mod_set_bind(mod, len_rd, read_cb, cb_arg);
+	}
+
+	if (!strncmp(next, "sub", len)) {
+		return mod_set_sub(mod, len_rd, read_cb, cb_arg);
+	}
+
+	if (!strncmp(next, "pub", len)) {
+		return mod_set_pub(mod, len_rd, read_cb, cb_arg);
+	}
+
+	if (!strncmp(next, "data", len)) {
+		return mod_data_set(mod, next, len_rd, read_cb, cb_arg);
+	}
+
+	BT_WARN("Unknown module key %s", next);
+	return -ENOENT;
+}
+
+static int sig_mod_set(const char *name, size_t len_rd,
+		       settings_read_cb read_cb, void *cb_arg)
+{
+	return mod_set(false, name, len_rd, read_cb, cb_arg);
+}
+
+BT_MESH_SETTINGS_DEFINE(sig_mod, "s", sig_mod_set);
+
+static int vnd_mod_set(const char *name, size_t len_rd,
+		       settings_read_cb read_cb, void *cb_arg)
+{
+	return mod_set(true, name, len_rd, read_cb, cb_arg);
+}
+
+BT_MESH_SETTINGS_DEFINE(vnd_mod, "v", vnd_mod_set);
+
+static void encode_mod_path(struct bt_mesh_model *mod, bool vnd,
+			    const char *key, char *path, size_t path_len)
+{
+	uint16_t mod_key = (((uint16_t)mod->elem_idx << 8) | mod->mod_idx);
+
+	if (vnd) {
+		snprintk(path, path_len, "bt/mesh/v/%x/%s", mod_key, key);
+	} else {
+		snprintk(path, path_len, "bt/mesh/s/%x/%s", mod_key, key);
+	}
+}
+
+static void store_pending_mod_bind(struct bt_mesh_model *mod, bool vnd)
+{
+	uint16_t keys[CONFIG_BT_MESH_MODEL_KEY_COUNT];
+	char path[20];
+	int i, count, err;
+
+	for (i = 0, count = 0; i < ARRAY_SIZE(mod->keys); i++) {
+		if (mod->keys[i] != BT_MESH_KEY_UNUSED) {
+			keys[count++] = mod->keys[i];
+			BT_DBG("model key 0x%04x", mod->keys[i]);
+		}
+	}
+
+	encode_mod_path(mod, vnd, "bind", path, sizeof(path));
+
+	if (count) {
+		err = settings_save_one(path, keys, count * sizeof(keys[0]));
+	} else {
+		err = settings_delete(path);
+	}
+
+	if (err) {
+		BT_ERR("Failed to store %s value", log_strdup(path));
+	} else {
+		BT_DBG("Stored %s value", log_strdup(path));
+	}
+}
+
+static void store_pending_mod_sub(struct bt_mesh_model *mod, bool vnd)
+{
+	uint16_t groups[CONFIG_BT_MESH_MODEL_GROUP_COUNT];
+	char path[20];
+	int i, count, err;
+
+	for (i = 0, count = 0; i < CONFIG_BT_MESH_MODEL_GROUP_COUNT; i++) {
+		if (mod->groups[i] != BT_MESH_ADDR_UNASSIGNED) {
+			groups[count++] = mod->groups[i];
+		}
+	}
+
+	encode_mod_path(mod, vnd, "sub", path, sizeof(path));
+
+	if (count) {
+		err = settings_save_one(path, groups,
+					count * sizeof(groups[0]));
+	} else {
+		err = settings_delete(path);
+	}
+
+	if (err) {
+		BT_ERR("Failed to store %s value", log_strdup(path));
+	} else {
+		BT_DBG("Stored %s value", log_strdup(path));
+	}
+}
+
+static void store_pending_mod_pub(struct bt_mesh_model *mod, bool vnd)
+{
+	struct mod_pub_val pub;
+	char path[20];
+	int err;
+
+	encode_mod_path(mod, vnd, "pub", path, sizeof(path));
+
+	if (!mod->pub || mod->pub->addr == BT_MESH_ADDR_UNASSIGNED) {
+		err = settings_delete(path);
+	} else {
+		pub.addr = mod->pub->addr;
+		pub.key = mod->pub->key;
+		pub.ttl = mod->pub->ttl;
+		pub.retransmit = mod->pub->retransmit;
+		pub.period = mod->pub->period;
+		pub.period_div = mod->pub->period_div;
+		pub.cred = mod->pub->cred;
+
+		err = settings_save_one(path, &pub, sizeof(pub));
+	}
+
+	if (err) {
+		BT_ERR("Failed to store %s value", log_strdup(path));
+	} else {
+		BT_DBG("Stored %s value", log_strdup(path));
+	}
+}
+
+static void store_pending_mod(struct bt_mesh_model *mod,
+			      struct bt_mesh_elem *elem, bool vnd,
+			      bool primary, void *user_data)
+{
+	if (!mod->flags) {
+		return;
+	}
+
+	if (mod->flags & BT_MESH_MOD_BIND_PENDING) {
+		mod->flags &= ~BT_MESH_MOD_BIND_PENDING;
+		store_pending_mod_bind(mod, vnd);
+	}
+
+	if (mod->flags & BT_MESH_MOD_SUB_PENDING) {
+		mod->flags &= ~BT_MESH_MOD_SUB_PENDING;
+		store_pending_mod_sub(mod, vnd);
+	}
+
+	if (mod->flags & BT_MESH_MOD_PUB_PENDING) {
+		mod->flags &= ~BT_MESH_MOD_PUB_PENDING;
+		store_pending_mod_pub(mod, vnd);
+	}
+}
+
+void bt_mesh_model_pending_store(void)
+{
+	bt_mesh_model_foreach(store_pending_mod, NULL);
+}
+
+void bt_mesh_model_bind_store(struct bt_mesh_model *mod)
+{
+	mod->flags |= BT_MESH_MOD_BIND_PENDING;
+	bt_mesh_settings_store_schedule(BT_MESH_SETTINGS_MOD_PENDING);
+}
+
+void bt_mesh_model_sub_store(struct bt_mesh_model *mod)
+{
+	mod->flags |= BT_MESH_MOD_SUB_PENDING;
+	bt_mesh_settings_store_schedule(BT_MESH_SETTINGS_MOD_PENDING);
+}
+
+void bt_mesh_model_pub_store(struct bt_mesh_model *mod)
+{
+	mod->flags |= BT_MESH_MOD_PUB_PENDING;
+	bt_mesh_settings_store_schedule(BT_MESH_SETTINGS_MOD_PENDING);
+}
+
+int bt_mesh_model_data_store(struct bt_mesh_model *mod, bool vnd,
+			     const char *name, const void *data,
+			     size_t data_len)
+{
+	char path[30];
+	int err;
+
+	encode_mod_path(mod, vnd, "data", path, sizeof(path));
+	if (name) {
+		strcat(path, "/");
+		strncat(path, name, 8);
+	}
+
+	if (data_len) {
+		err = settings_save_one(path, data, data_len);
+	} else {
+		err = settings_delete(path);
+	}
+
+	if (err) {
+		BT_ERR("Failed to store %s value", log_strdup(path));
+	} else {
+		BT_DBG("Stored %s value", log_strdup(path));
+	}
+	return err;
+}
+
+static void commit_mod(struct bt_mesh_model *mod, struct bt_mesh_elem *elem,
+		       bool vnd, bool primary, void *user_data)
+{
+	if (mod->pub && mod->pub->update &&
+	    mod->pub->addr != BT_MESH_ADDR_UNASSIGNED) {
+		int32_t ms = bt_mesh_model_pub_period_get(mod);
+
+		if (ms > 0) {
+			BT_DBG("Starting publish timer (period %u ms)", ms);
+			k_delayed_work_submit(&mod->pub->timer, K_MSEC(ms));
+		}
+	}
+
+	if (!IS_ENABLED(CONFIG_BT_MESH_LOW_POWER)) {
+		return;
+	}
+
+	for (int i = 0; i < ARRAY_SIZE(mod->groups); i++) {
+		if (mod->groups[i] != BT_MESH_ADDR_UNASSIGNED) {
+			bt_mesh_lpn_group_add(mod->groups[i]);
+		}
+	}
+}
+
+void bt_mesh_model_settings_commit(void)
+{
+	bt_mesh_model_foreach(commit_mod, NULL);
+}

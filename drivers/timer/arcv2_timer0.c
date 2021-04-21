@@ -58,16 +58,16 @@ static struct k_spinlock lock;
 
 
 #if SMP_TIMER_DRIVER
-volatile static u64_t last_time;
-volatile static u64_t start_time;
+volatile static uint64_t last_time;
+volatile static uint64_t start_time;
 
 #else
-static u32_t last_load;
+static uint32_t last_load;
 
 
 /*
  * This local variable holds the amount of timer cycles elapsed
- * and it is updated in z_timer_int_handler and z_clock_set_timeout().
+ * and it is updated in timer_int_handler and sys_clock_set_timeout().
  *
  * Note:
  *  At an arbitrary point in time the "current" value of the
@@ -75,13 +75,13 @@ static u32_t last_load;
  *
  * t = cycle_counter + elapsed();
  */
-static u32_t cycle_count;
+static uint32_t cycle_count;
 
 /*
  * This local variable holds the amount of elapsed HW cycles
  * that have been announced to the kernel.
  */
-static u32_t announced_cycles;
+static uint32_t announced_cycles;
 
 
 /*
@@ -93,7 +93,7 @@ static u32_t announced_cycles;
  * Each time cycle_count is updated with the value from overflow_cycles,
  * the overflow_cycles must be reset to zero.
  */
-static volatile u32_t overflow_cycles;
+static volatile uint32_t overflow_cycles;
 #endif
 
 /**
@@ -102,7 +102,7 @@ static volatile u32_t overflow_cycles;
  *
  * @return Current Timer0 count
  */
-static ALWAYS_INLINE u32_t timer0_count_register_get(void)
+static ALWAYS_INLINE uint32_t timer0_count_register_get(void)
 {
 	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT);
 }
@@ -113,7 +113,7 @@ static ALWAYS_INLINE u32_t timer0_count_register_get(void)
  *
  * @return N/A
  */
-static ALWAYS_INLINE void timer0_count_register_set(u32_t value)
+static ALWAYS_INLINE void timer0_count_register_set(uint32_t value)
 {
 	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_COUNT, value);
 }
@@ -124,7 +124,7 @@ static ALWAYS_INLINE void timer0_count_register_set(u32_t value)
  *
  * @return N/A
  */
-static ALWAYS_INLINE u32_t timer0_control_register_get(void)
+static ALWAYS_INLINE uint32_t timer0_control_register_get(void)
 {
 	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_CONTROL);
 }
@@ -135,7 +135,7 @@ static ALWAYS_INLINE u32_t timer0_control_register_get(void)
  *
  * @return N/A
  */
-static ALWAYS_INLINE void timer0_control_register_set(u32_t value)
+static ALWAYS_INLINE void timer0_control_register_set(uint32_t value)
 {
 	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_CONTROL, value);
 }
@@ -146,7 +146,7 @@ static ALWAYS_INLINE void timer0_control_register_set(u32_t value)
  *
  * @return N/A
  */
-static ALWAYS_INLINE u32_t timer0_limit_register_get(void)
+static ALWAYS_INLINE uint32_t timer0_limit_register_get(void)
 {
 	return z_arc_v2_aux_reg_read(_ARC_V2_TMR0_LIMIT);
 }
@@ -157,7 +157,7 @@ static ALWAYS_INLINE u32_t timer0_limit_register_get(void)
  *
  * @return N/A
  */
-static ALWAYS_INLINE void timer0_limit_register_set(u32_t count)
+static ALWAYS_INLINE void timer0_limit_register_set(uint32_t count)
 {
 	z_arc_v2_aux_reg_write(_ARC_V2_TMR0_LIMIT, count);
 }
@@ -166,7 +166,7 @@ static ALWAYS_INLINE void timer0_limit_register_set(u32_t count)
 /* This internal function calculates the amount of HW cycles that have
  * elapsed since the last time the absolute HW cycles counter has been
  * updated. 'cycle_count' may be updated either by the ISR, or
- * in z_clock_set_timeout().
+ * in sys_clock_set_timeout().
  *
  * Additionally, the function updates the 'overflow_cycles' counter, that
  * holds the amount of elapsed HW cycles due to (possibly) multiple
@@ -180,9 +180,9 @@ static ALWAYS_INLINE void timer0_limit_register_set(u32_t count)
  *     - and until the current call of the function is completed.
  * - the function is invoked with interrupts disabled.
  */
-static u32_t elapsed(void)
+static uint32_t elapsed(void)
 {
-	u32_t val, ctrl;
+	uint32_t val, ctrl;
 
 	do {
 		val =  timer0_count_register_get();
@@ -196,7 +196,7 @@ static u32_t elapsed(void)
 					    _ARC_V2_TMR_CTRL_IE);
 		/* use sw triggered irq to remember the timer irq request
 		 * which may be cleared by the above operation. when elapsed ()
-		 * is called in z_timer_int_handler, no need to do this.
+		 * is called in timer_int_handler, no need to do this.
 		 */
 		if (!z_arc_v2_irq_unit_is_in_isr() ||
 		    z_arc_v2_aux_reg_read(_ARC_V2_ICAUSE) != IRQ_TIMER0) {
@@ -219,13 +219,13 @@ static u32_t elapsed(void)
  *
  * @return N/A
  */
-static void timer_int_handler(void *unused)
+static void timer_int_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
-	u32_t dticks;
+	uint32_t dticks;
 
 #if defined(CONFIG_SMP) && CONFIG_MP_NUM_CPUS > 1
-	u64_t curr_time;
+	uint64_t curr_time;
 	k_spinlock_key_t key;
 
 	/* clear the IP bit of the control register */
@@ -241,16 +241,16 @@ static void timer_int_handler(void *unused)
 
 	k_spin_unlock(&lock, key);
 
-	z_clock_announce(dticks);
+	sys_clock_announce(dticks);
 #else
 	/* timer_int_handler may be triggered by timer irq or
 	 * software helper irq
 	 */
 
-	/* irq with higher priority may call z_clock_set_timeout
+	/* irq with higher priority may call sys_clock_set_timeout
 	 * so need a lock here
 	 */
-	u32_t key;
+	uint32_t key;
 
 	key = arch_irq_lock();
 
@@ -262,7 +262,7 @@ static void timer_int_handler(void *unused)
 
 	dticks = (cycle_count - announced_cycles) / CYC_PER_TICK;
 	announced_cycles += dticks * CYC_PER_TICK;
-	z_clock_announce(TICKLESS ? dticks : 1);
+	sys_clock_announce(TICKLESS ? dticks : 1);
 #endif
 
 }
@@ -277,7 +277,7 @@ static void timer_int_handler(void *unused)
  *
  * @return 0
  */
-int z_clock_driver_init(struct device *device)
+int sys_clock_driver_init(const struct device *device)
 {
 	ARG_UNUSED(device);
 
@@ -314,7 +314,7 @@ int z_clock_driver_init(struct device *device)
 	return 0;
 }
 
-void z_clock_set_timeout(s32_t ticks, bool idle)
+void sys_clock_set_timeout(int32_t ticks, bool idle)
 {
 	/* If the kernel allows us to miss tick announcements in idle,
 	 * then shut off the counter. (Note: we can assume if idle==true
@@ -326,7 +326,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	 * However for single core using 32-bits arc timer, idle cannot
 	 * be ignored, as 32-bits timer will overflow in a not-long time.
 	 */
-	if (IS_ENABLED(CONFIG_TICKLESS_IDLE) && ticks == K_TICKS_FOREVER) {
+	if (IS_ENABLED(CONFIG_TICKLESS_KERNEL) && ticks == K_TICKS_FOREVER) {
 		timer0_control_register_set(0);
 		timer0_count_register_set(0);
 		timer0_limit_register_set(0);
@@ -334,8 +334,8 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	}
 
 #if defined(CONFIG_TICKLESS_KERNEL)
-	u32_t delay;
-	u32_t key;
+	uint32_t delay;
+	uint32_t key;
 
 	ticks = MIN(MAX_TICKS, ticks);
 
@@ -356,8 +356,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	arch_irq_unlock(key);
 #endif
 #else
-	if (IS_ENABLED(CONFIG_TICKLESS_IDLE) && idle
-	    && ticks == K_TICKS_FOREVER) {
+	if (IS_ENABLED(CONFIG_TICKLESS_KERNEL) && idle && ticks == K_TICKS_FOREVER) {
 		timer0_control_register_set(0);
 		timer0_count_register_set(0);
 		timer0_limit_register_set(0);
@@ -366,10 +365,10 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	}
 
 #if defined(CONFIG_TICKLESS_KERNEL)
-	u32_t delay;
-	u32_t unannounced;
+	uint32_t delay;
+	uint32_t unannounced;
 
-	ticks = MIN(MAX_TICKS, (u32_t)(MAX((s32_t)(ticks - 1), 0)));
+	ticks = MIN(MAX_TICKS, (uint32_t)(MAX((int32_t)(ticks - 1), 0)));
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
@@ -386,7 +385,7 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 	/* normal case */
 	unannounced = cycle_count - announced_cycles;
 
-	if ((s32_t)unannounced < 0) {
+	if ((int32_t)unannounced < 0) {
 		/* We haven't announced for more than half the 32-bit
 		 * wrap duration, because new timeouts keep being set
 		 * before the existing one fires. Force an announce
@@ -417,13 +416,13 @@ void z_clock_set_timeout(s32_t ticks, bool idle)
 #endif
 }
 
-u32_t z_clock_elapsed(void)
+uint32_t sys_clock_elapsed(void)
 {
 	if (!TICKLESS) {
 		return 0;
 	}
 
-	u32_t cyc;
+	uint32_t cyc;
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
 #if SMP_TIMER_DRIVER
@@ -437,13 +436,13 @@ u32_t z_clock_elapsed(void)
 	return cyc / CYC_PER_TICK;
 }
 
-u32_t z_timer_cycle_get_32(void)
+uint32_t sys_clock_cycle_get_32(void)
 {
 #if SMP_TIMER_DRIVER
 	return z_arc_connect_gfrc_read() - start_time;
 #else
 	k_spinlock_key_t key = k_spin_lock(&lock);
-	u32_t ret = elapsed() + cycle_count;
+	uint32_t ret = elapsed() + cycle_count;
 
 	k_spin_unlock(&lock, key);
 	return ret;

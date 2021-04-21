@@ -53,6 +53,8 @@ extern "C" {
 #define BT_DATA_MESH_PROV               0x29 /* Mesh Provisioning PDU */
 #define BT_DATA_MESH_MESSAGE            0x2a /* Mesh Networking PDU */
 #define BT_DATA_MESH_BEACON             0x2b /* Mesh Beacon */
+#define BT_DATA_BIG_INFO                0x2c /* BIGInfo */
+#define BT_DATA_BROADCAST_CODE          0x2d /* Broadcast Code */
 
 #define BT_DATA_MANUFACTURER_DATA       0xff /* Manufacturer Specific Data */
 
@@ -78,6 +80,8 @@ extern "C" {
 
 /** LE PHY types */
 enum {
+	/** Convenience macro for when no PHY is set. */
+	BT_GAP_LE_PHY_NONE                    = 0,
 	/** LE 1M PHY */
 	BT_GAP_LE_PHY_1M                      = BIT(0),
 	 /** LE 2M PHY */
@@ -140,6 +144,37 @@ enum {
 
 #define BT_GAP_DATA_TIME_DEFAULT                0x0148 /* 328 us */
 #define BT_GAP_DATA_TIME_MAX                    0x4290 /* 17040 us */
+
+#define BT_GAP_SID_MAX                          0x0F
+#define BT_GAP_PER_ADV_MAX_MAX_SKIP             0x01F3
+#define BT_GAP_PER_ADV_MAX_MAX_TIMEOUT          0x4000
+
+
+/** Constant Tone Extension (CTE) types */
+enum {
+	/** Angle of Arrival */
+	BT_GAP_CTE_AOA = 0x00,
+	/** Angle of Departure with 1 us slots */
+	BT_GAP_CTE_AOD_1US = 0x01,
+	/** Angle of Departure with 2 us slots */
+	BT_GAP_CTE_AOD_2US = 0x02,
+	/** No extensions */
+	BT_GAP_CTE_NONE = 0xFF,
+};
+
+
+/** @brief Peripheral sleep clock accuracy (SCA) in ppm (parts per million) */
+enum {
+	BT_GAP_SCA_UNKNOWN = 0,
+	BT_GAP_SCA_251_500 = 0,
+	BT_GAP_SCA_151_250 = 1,
+	BT_GAP_SCA_101_150 = 2,
+	BT_GAP_SCA_76_100 = 3,
+	BT_GAP_SCA_51_75 = 4,
+	BT_GAP_SCA_31_50 = 5,
+	BT_GAP_SCA_21_30 = 6,
+	BT_GAP_SCA_0_20 = 7,
+};
 
 /**
  * @}

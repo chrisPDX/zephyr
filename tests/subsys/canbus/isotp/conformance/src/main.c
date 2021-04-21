@@ -63,8 +63,8 @@
  */
 
 struct frame_desired {
-	u8_t data[8];
-	u8_t length;
+	uint8_t data[8];
+	uint8_t length;
 };
 
 struct frame_desired des_frames[CEIL((DATA_SEND_LENGTH - DATA_SIZE_FF),
@@ -104,10 +104,10 @@ const struct isotp_msg_id tx_addr_ext = {
 	.ext_addr = EXT_ADDR
 };
 
-struct device *can_dev;
+const struct device *can_dev;
 struct isotp_recv_ctx recv_ctx;
 struct isotp_send_ctx send_ctx;
-u8_t data_buf[128];
+uint8_t data_buf[128];
 CAN_DEFINE_MSGQ(frame_msgq, 10);
 struct k_sem send_compl_sem;
 
@@ -121,7 +121,7 @@ void send_complette_cb(int error_nr, void *arg)
 	k_sem_give(&send_compl_sem);
 }
 
-static void print_hex(const u8_t *ptr, size_t len)
+static void print_hex(const uint8_t *ptr, size_t len)
 {
 	while (len--) {
 		printk("%02x ", *ptr++);
@@ -129,7 +129,7 @@ static void print_hex(const u8_t *ptr, size_t len)
 }
 
 
-static int check_data(const u8_t *frame, const u8_t *desired, size_t length)
+static int check_data(const uint8_t *frame, const uint8_t *desired, size_t length)
 {
 	int ret;
 
@@ -175,7 +175,7 @@ static void get_sf_ignore(struct isotp_recv_ctx *recv_ctx)
 	zassert_equal(ret, ISOTP_RECV_TIMEOUT, "recv returned %d", ret);
 }
 
-static void send_test_data(const u8_t *data, size_t len)
+static void send_test_data(const uint8_t *data, size_t len)
 {
 	int ret;
 
@@ -185,11 +185,11 @@ static void send_test_data(const u8_t *data, size_t len)
 }
 
 static void receive_test_data(struct isotp_recv_ctx *recv_ctx,
-			      const u8_t *data, size_t len, s32_t delay)
+			      const uint8_t *data, size_t len, int32_t delay)
 {
 	size_t remaining_len = len;
 	int ret, recv_len;
-	const u8_t *data_ptr = data;
+	const uint8_t *data_ptr = data;
 
 	do {
 		memset(data_buf, 0, sizeof(data_buf));
@@ -215,13 +215,13 @@ static void receive_test_data(struct isotp_recv_ctx *recv_ctx,
 }
 
 static void send_frame_series(struct frame_desired *frames, size_t length,
-			      u32_t id)
+			      uint32_t id)
 {
 	int i, ret;
 	struct zcan_frame frame = {
 		.id_type = CAN_STANDARD_IDENTIFIER,
 		.rtr = CAN_DATAFRAME,
-		.std_id = id
+		.id = id
 	};
 	struct frame_desired *desired = frames;
 
@@ -257,15 +257,15 @@ static void check_frame_series(struct frame_desired *frames, size_t length,
 	zassert_equal(ret, -EAGAIN, "Expected timeout, but received %d", ret);
 }
 
-static int attach_msgq(u32_t id)
+static int attach_msgq(uint32_t id)
 {
 	int filter_id;
 	struct zcan_filter filter = {
 		.id_type = CAN_STANDARD_IDENTIFIER,
 		.rtr = CAN_DATAFRAME,
-		.std_id = id,
+		.id = id,
 		.rtr_mask = 1,
-		.std_id_mask = CAN_STD_ID_MASK
+		.id_mask = CAN_STD_ID_MASK
 	};
 
 	filter_id = can_attach_msgq(can_dev, &frame_msgq, &filter);
@@ -277,10 +277,10 @@ static int attach_msgq(u32_t id)
 }
 
 static void prepare_cf_frames(struct frame_desired *frames, size_t frames_cnt,
-			      const u8_t *data, size_t data_len)
+			      const uint8_t *data, size_t data_len)
 {
 	int i;
-	const u8_t *data_ptr = data;
+	const uint8_t *data_ptr = data;
 	size_t remaining_length = data_len;
 
 	for (i = 0; i < frames_cnt && remaining_length; i++) {
@@ -404,7 +404,7 @@ static void test_receive_sf_ext(void)
 static void test_send_data(void)
 {
 	struct frame_desired fc_frame, ff_frame;
-	const u8_t *data_ptr = random_data;
+	const uint8_t *data_ptr = random_data;
 	size_t remaining_length = DATA_SEND_LENGTH;
 	int filter_id;
 
@@ -440,7 +440,7 @@ static void test_send_data(void)
 
 static void test_send_data_blocks(void)
 {
-	const u8_t *data_ptr = random_data;
+	const uint8_t *data_ptr = random_data;
 	size_t remaining_length = DATA_SEND_LENGTH;
 	struct frame_desired *data_frame_ptr = des_frames;
 	int filter_id, ret;
@@ -505,7 +505,7 @@ static void test_send_data_blocks(void)
 
 static void test_receive_data(void)
 {
-	const u8_t *data_ptr = random_data;
+	const uint8_t *data_ptr = random_data;
 	size_t remaining_length = DATA_SEND_LENGTH;
 	int filter_id, ret;
 	struct frame_desired fc_frame, ff_frame;
@@ -545,7 +545,7 @@ static void test_receive_data(void)
 
 static void test_receive_data_blocks(void)
 {
-	const u8_t *data_ptr = random_data;
+	const uint8_t *data_ptr = random_data;
 	size_t remaining_length = DATA_SEND_LENGTH;
 	struct frame_desired *data_frame_ptr = des_frames;
 	int filter_id, ret;
@@ -609,7 +609,7 @@ static void test_receive_data_blocks(void)
 static void test_send_timeouts(void)
 {
 	int ret;
-	u32_t start_time, time_diff;
+	uint32_t start_time, time_diff;
 	struct frame_desired fc_cts_frame;
 
 	fc_cts_frame.data[0] = FC_PCI_BYTE_1(FC_PCI_CTS);
@@ -634,6 +634,7 @@ static void test_send_timeouts(void)
 	ret = isotp_send(&send_ctx, can_dev, random_data, sizeof(random_data),
 			 &tx_addr, &rx_addr, send_complette_cb,
 			 (void *)ISOTP_N_TIMEOUT_BS);
+	zassert_equal(ret, ISOTP_N_OK, "Send returned %d", ret);
 
 	send_frame_series(&fc_cts_frame, 1, rx_addr.std_id);
 
@@ -650,6 +651,7 @@ static void test_send_timeouts(void)
 	ret = isotp_send(&send_ctx, can_dev, random_data, sizeof(random_data),
 			 &tx_addr, &rx_addr, send_complette_cb,
 			 (void *)ISOTP_N_TIMEOUT_BS);
+	zassert_equal(ret, ISOTP_N_OK, "Send returned %d", ret);
 
 	ret = k_sem_take(&send_compl_sem, K_MSEC(800));
 	zassert_equal(ret, -EAGAIN, "Timeout too early");
@@ -668,7 +670,7 @@ static void test_send_timeouts(void)
 static void test_receive_timeouts(void)
 {
 	int ret;
-	u32_t start_time, time_diff;
+	uint32_t start_time, time_diff;
 	struct frame_desired ff_frame;
 
 	ff_frame.data[0] = FF_PCI_BYTE_1(DATA_SEND_LENGTH);
@@ -704,7 +706,7 @@ static void test_stmin(void)
 	int filter_id, ret;
 	struct frame_desired fc_frame, ff_frame;
 	struct zcan_frame raw_frame;
-	u32_t start_time, time_diff;
+	uint32_t start_time, time_diff;
 
 	ff_frame.data[0] = FF_PCI_BYTE_1(DATA_SIZE_FF + DATA_SIZE_CF * 4);
 	ff_frame.data[1] = FF_PCI_BYTE_2(DATA_SIZE_FF + DATA_SIZE_CF * 4);
@@ -823,6 +825,7 @@ void test_sender_fc_errors(void)
 	ret = isotp_send(&send_ctx, can_dev, random_data, DATA_SEND_LENGTH,
 			 &tx_addr, &rx_addr, send_complette_cb,
 			 (void *)ISOTP_N_INVALID_FS);
+	zassert_equal(ret, ISOTP_N_OK, "Send returned %d", ret);
 
 	check_frame_series(&ff_frame, 1, &frame_msgq);
 	send_frame_series(&fc_frame, 1, rx_addr.std_id);
@@ -882,7 +885,7 @@ void test_main(void)
 	can_dev = device_get_binding(CAN_DEVICE_NAME);
 	zassert_not_null(can_dev, "CAN device not not found");
 
-	ret = can_configure(can_dev, CAN_LOOPBACK_MODE, 0);
+	ret = can_set_mode(can_dev, CAN_LOOPBACK_MODE);
 	zassert_equal(ret, 0, "Failed to set loopback mode [%d]", ret);
 
 	k_sem_init(&send_compl_sem, 0, 1);

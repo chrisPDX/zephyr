@@ -117,8 +117,8 @@ arduino_i2c: &i2c0 {
 	compatible = "nordic,nrf-twim";
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
-	sda-pin = <26>;
-	scl-pin = <27>;
+	sda-gpios = <&gpio0 26 0>;
+	scl-gpios = <&gpio0 27 0>;
 
 	mma8652fc@1d {
 		compatible = "nxp,fxos8700","nxp,mma8652fc";
@@ -159,14 +159,11 @@ arduino_spi: &spi3 {
 	sck-pin = <47>;
 	miso-pin = <46>;
 	mosi-pin = <45>;
-	cs-gpios = <&arduino_header 16 0>; /* D10 */
+	cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>; /* D10 */
 };
 
 &flash0 {
-	/*
-	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
-	 */
+
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;

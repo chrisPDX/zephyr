@@ -3,16 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/types.h>
 #include <sys/byteorder.h>
 
 #include <bluetooth/addr.h>
 #include <bluetooth/hci_vs.h>
 
-#include <nrf.h>
+#include <soc.h>
 
-u8_t hci_vendor_read_static_addr(struct bt_hci_vs_static_addr addrs[],
-				 u8_t size)
+uint8_t hci_vendor_read_static_addr(struct bt_hci_vs_static_addr addrs[],
+				 uint8_t size)
 {
 	/* only one supported */
 	ARG_UNUSED(size);
@@ -52,7 +51,7 @@ u8_t hci_vendor_read_static_addr(struct bt_hci_vs_static_addr addrs[],
 	return 0;
 }
 
-void hci_vendor_read_key_hierarchy_roots(u8_t ir[16], u8_t er[16])
+void hci_vendor_read_key_hierarchy_roots(uint8_t ir[16], uint8_t er[16])
 {
 	/* Mark IR as invalid.
 	 * No public address is available, and static address IR should be read

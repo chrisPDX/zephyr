@@ -41,17 +41,6 @@ void z_smp_global_unlock(unsigned int key)
 	arch_irq_unlock(key);
 }
 
-void z_smp_reacquire_global_lock(struct k_thread *thread)
-{
-	if (thread->base.global_lock_count) {
-		arch_irq_lock();
-
-		while (!atomic_cas(&global_lock, 0, 1)) {
-		}
-	}
-}
-
-
 /* Called from within z_swap(), so assumes lock already held */
 void z_smp_release_global_lock(struct k_thread *thread)
 {
@@ -63,18 +52,18 @@ void z_smp_release_global_lock(struct k_thread *thread)
 #if CONFIG_MP_NUM_CPUS > 1
 static FUNC_NORETURN void smp_init_top(void *arg)
 {
-	atomic_t *start_flag = arg;
+	atomic_t *cpu_start_flag = arg;
 	struct k_thread dummy_thread;
 
 	/* Wait for the signal to begin scheduling */
-	while (!atomic_get(start_flag)) {
+	while (!atomic_get(cpu_start_flag)) {
 	}
 
 	z_dummy_thread_init(&dummy_thread);
 	smp_timer_init();
 	z_swap_unlocked();
 
-	CODE_UNREACHABLE;
+	CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
 }
 #endif
 

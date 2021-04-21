@@ -36,12 +36,18 @@ zephyr_sources_ifdef(
   CONFIG_TRACING_BACKEND_POSIX
   tracing_backend_posix.c
   )
+
+zephyr_sources_ifdef(
+  CONFIG_TRACING_BACKEND_RAM
+  tracing_backend_ram.c
+  )
+
 endif()
 
 zephyr_include_directories_ifdef(
   CONFIG_TRACING
   ${ZEPHYR_BASE}/kernel/include
-  ${ZEPHYR_BASE}/arch/${ARCH}/include
+  ${ARCH_DIR}/${ARCH}/include
 )
 
 zephyr_include_directories_ifdef(CONFIG_TRACING include)

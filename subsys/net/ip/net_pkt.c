@@ -138,9 +138,9 @@ struct net_pkt_alloc {
 	};
 	const char *func_alloc;
 	const char *func_free;
-	u16_t line_alloc;
-	u16_t line_free;
-	u8_t in_use;
+	uint16_t line_alloc;
+	uint16_t line_free;
+	uint8_t in_use;
 	bool is_pkt;
 };
 
@@ -283,10 +283,10 @@ const char *net_pkt_pool2str(struct net_buf_pool *pool)
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT_ALLOC) || \
 	CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
-static inline s16_t get_frees(struct net_buf_pool *pool)
+static inline int16_t get_frees(struct net_buf_pool *pool)
 {
 #if defined(CONFIG_NET_BUF_POOL_USAGE)
-	return pool->avail_count;
+	return atomic_get(&pool->avail_count);
 #else
 	return 0;
 #endif
@@ -303,7 +303,7 @@ static inline const char *get_name(struct net_buf_pool *pool)
 #endif
 }
 
-static inline s16_t get_size(struct net_buf_pool *pool)
+static inline int16_t get_size(struct net_buf_pool *pool)
 {
 #if defined(CONFIG_NET_BUF_POOL_USAGE)
 	return pool->pool_size;
@@ -343,9 +343,9 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 
 		frag_size = frag->size;
 
-		NET_INFO("[%d] frag %p len %d size %d pool %p",
-			 count, frag, frag->len, frag_size,
-			 net_buf_pool_get(frag->pool_id));
+		NET_INFO("[%d] frag %p len %d max len %u size %d pool %p",
+			 count, frag, frag->len, net_buf_max_len(frag),
+			 frag_size, net_buf_pool_get(frag->pool_id));
 
 		count++;
 
@@ -857,7 +857,7 @@ static struct net_buf *pkt_alloc_buffer(struct net_buf_pool *pool,
 					size_t size, k_timeout_t timeout)
 #endif
 {
-	u64_t end = z_timeout_end_calc(timeout);
+	uint64_t end = sys_clock_timeout_end_calc(timeout);
 	struct net_buf *first = NULL;
 	struct net_buf *current = NULL;
 
@@ -884,7 +884,7 @@ static struct net_buf *pkt_alloc_buffer(struct net_buf_pool *pool,
 
 		if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
 		    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			s64_t remaining = end - z_tick_get();
+			int64_t remaining = end - sys_clock_tick_get();
 
 			if (remaining <= 0) {
 				break;
@@ -973,7 +973,7 @@ static size_t pkt_buffer_length(struct net_pkt *pkt,
 #if defined (CONFIG_NET_L2_ETHERNET)
 		if (net_if_l2(net_pkt_iface(pkt)) ==
 		    &NET_L2_GET_NAME(ETHERNET)) {
-			max_len += sizeof(struct net_eth_hdr);
+			max_len += NET_ETH_MAX_HDR_SIZE;
 		} else
 #endif /* CONFIG_NET_L2_ETHERNET */
 		{
@@ -1020,13 +1020,13 @@ static size_t pkt_estimate_headers_length(struct net_pkt *pkt,
 	return hdr_len;
 }
 
-static size_t pkt_get_size(struct net_pkt *pkt)
+static size_t pkt_get_max_len(struct net_pkt *pkt)
 {
 	struct net_buf *buf = pkt->buffer;
 	size_t size = 0;
 
 	while (buf) {
-		size += buf->size;
+		size += net_buf_max_len(buf);
 		buf = buf->frags;
 	}
 
@@ -1039,7 +1039,7 @@ size_t net_pkt_available_buffer(struct net_pkt *pkt)
 		return 0;
 	}
 
-	return pkt_get_size(pkt) - net_pkt_get_len(pkt);
+	return pkt_get_max_len(pkt) - net_pkt_get_len(pkt);
 }
 
 size_t net_pkt_available_payload_buffer(struct net_pkt *pkt,
@@ -1103,7 +1103,7 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 			 k_timeout_t timeout)
 #endif
 {
-	u64_t end = z_timeout_end_calc(timeout);
+	uint64_t end = sys_clock_timeout_end_calc(timeout);
 	struct net_buf_pool *pool = NULL;
 	size_t alloc_len = 0;
 	size_t hdr_len = 0;
@@ -1118,7 +1118,7 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 	}
 
 	/* Verifying existing buffer and take into account free space there */
-	alloc_len = pkt_get_size(pkt) - net_pkt_get_len(pkt);
+	alloc_len = net_pkt_available_buffer(pkt);
 	if (!alloc_len) {
 		/* In case of no free space, it will account for header
 		 * space estimation
@@ -1144,7 +1144,7 @@ int net_pkt_alloc_buffer(struct net_pkt *pkt,
 
 	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
 	    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-		s64_t remaining = end - z_tick_get();
+		int64_t remaining = end - sys_clock_tick_get();
 
 		if (remaining <= 0) {
 			timeout = K_NO_WAIT;
@@ -1202,10 +1202,22 @@ static struct net_pkt *pkt_alloc(struct k_mem_slab *slab, k_timeout_t timeout)
 		net_pkt_set_ipv6_next_hdr(pkt, 255);
 	}
 
+#if IS_ENABLED(CONFIG_NET_TX_DEFAULT_PRIORITY)
+#define TX_DEFAULT_PRIORITY CONFIG_NET_TX_DEFAULT_PRIORITY
+#else
+#define TX_DEFAULT_PRIORITY 0
+#endif
+
+#if IS_ENABLED(CONFIG_NET_RX_DEFAULT_PRIORITY)
+#define RX_DEFAULT_PRIORITY CONFIG_NET_RX_DEFAULT_PRIORITY
+#else
+#define RX_DEFAULT_PRIORITY 0
+#endif
+
 	if (&tx_pkts == slab) {
-		net_pkt_set_priority(pkt, CONFIG_NET_TX_DEFAULT_PRIORITY);
+		net_pkt_set_priority(pkt, TX_DEFAULT_PRIORITY);
 	} else if (&rx_pkts == slab) {
-		net_pkt_set_priority(pkt, CONFIG_NET_RX_DEFAULT_PRIORITY);
+		net_pkt_set_priority(pkt, RX_DEFAULT_PRIORITY);
 	}
 
 	if (IS_ENABLED(CONFIG_NET_PKT_RXTIME_STATS) ||
@@ -1363,7 +1375,7 @@ pkt_alloc_with_buffer(struct k_mem_slab *slab,
 		      k_timeout_t timeout)
 #endif
 {
-	u64_t end = z_timeout_end_calc(timeout);
+	uint64_t end = sys_clock_timeout_end_calc(timeout);
 	struct net_pkt *pkt;
 	int ret;
 
@@ -1383,7 +1395,7 @@ pkt_alloc_with_buffer(struct k_mem_slab *slab,
 
 	if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
 	    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-		s64_t remaining = end - z_tick_get();
+		int64_t remaining = end - sys_clock_tick_get();
 
 		if (remaining <= 0) {
 			timeout = K_NO_WAIT;
@@ -1483,7 +1495,8 @@ static void pkt_cursor_jump(struct net_pkt *pkt, bool write)
 
 	cursor->buf = cursor->buf->frags;
 	while (cursor->buf) {
-		size_t len = write ? cursor->buf->size : cursor->buf->len;
+		const size_t len =
+			write ? net_buf_max_len(cursor->buf) : cursor->buf->len;
 
 		if (!len) {
 			cursor->buf = cursor->buf->frags;
@@ -1508,7 +1521,7 @@ static void pkt_cursor_advance(struct net_pkt *pkt, bool write)
 		return;
 	}
 
-	len = write ? cursor->buf->size : cursor->buf->len;
+	len = write ? net_buf_max_len(cursor->buf) : cursor->buf->len;
 	if ((cursor->pos - cursor->buf->data) == len) {
 		pkt_cursor_jump(pkt, write);
 	}
@@ -1524,9 +1537,10 @@ static void pkt_cursor_update(struct net_pkt *pkt,
 		write = false;
 	}
 
-	len = write ? cursor->buf->size : cursor->buf->len;
+	len = write ? net_buf_max_len(cursor->buf) : cursor->buf->len;
 	if (length + (cursor->pos - cursor->buf->data) == len &&
-	    !(net_pkt_is_being_overwritten(pkt) && len < cursor->buf->size)) {
+	    !(net_pkt_is_being_overwritten(pkt) &&
+	      len < net_buf_max_len(cursor->buf))) {
 		pkt_cursor_jump(pkt, write);
 	} else {
 		cursor->pos += length;
@@ -1551,7 +1565,8 @@ static int net_pkt_cursor_operate(struct net_pkt *pkt,
 		}
 
 		if (write && !net_pkt_is_being_overwritten(pkt)) {
-			d_len = c_op->buf->size - (c_op->pos - c_op->buf->data);
+			d_len = net_buf_max_len(c_op->buf) -
+				(c_op->pos - c_op->buf->data);
 		} else {
 			d_len = c_op->buf->len - (c_op->pos - c_op->buf->data);
 		}
@@ -1581,7 +1596,7 @@ static int net_pkt_cursor_operate(struct net_pkt *pkt,
 		pkt_cursor_update(pkt, len, write);
 
 		if (copy && data) {
-			data = (u8_t *) data + len;
+			data = (uint8_t *) data + len;
 		}
 
 		length -= len;
@@ -1616,36 +1631,36 @@ int net_pkt_read(struct net_pkt *pkt, void *data, size_t length)
 	return net_pkt_cursor_operate(pkt, data, length, true, false);
 }
 
-int net_pkt_read_be16(struct net_pkt *pkt, u16_t *data)
+int net_pkt_read_be16(struct net_pkt *pkt, uint16_t *data)
 {
-	u8_t d16[2];
+	uint8_t d16[2];
 	int ret;
 
-	ret = net_pkt_read(pkt, d16, sizeof(u16_t));
+	ret = net_pkt_read(pkt, d16, sizeof(uint16_t));
 
 	*data = d16[0] << 8 | d16[1];
 
 	return ret;
 }
 
-int net_pkt_read_le16(struct net_pkt *pkt, u16_t *data)
+int net_pkt_read_le16(struct net_pkt *pkt, uint16_t *data)
 {
-	u8_t d16[2];
+	uint8_t d16[2];
 	int ret;
 
-	ret = net_pkt_read(pkt, d16, sizeof(u16_t));
+	ret = net_pkt_read(pkt, d16, sizeof(uint16_t));
 
 	*data = d16[1] << 8 | d16[0];
 
 	return ret;
 }
 
-int net_pkt_read_be32(struct net_pkt *pkt, u32_t *data)
+int net_pkt_read_be32(struct net_pkt *pkt, uint32_t *data)
 {
-	u8_t d32[4];
+	uint8_t d32[4];
 	int ret;
 
-	ret = net_pkt_read(pkt, d32, sizeof(u32_t));
+	ret = net_pkt_read(pkt, d32, sizeof(uint32_t));
 
 	*data = d32[0] << 24 | d32[1] << 16 | d32[2] << 8 | d32[3];
 
@@ -1681,7 +1696,7 @@ int net_pkt_copy(struct net_pkt *pkt_dst,
 		}
 
 		s_len = c_src->buf->len - (c_src->pos - c_src->buf->data);
-		d_len = c_dst->buf->size - (c_dst->pos - c_dst->buf->data);
+		d_len = net_buf_max_len(c_dst->buf) - (c_dst->pos - c_dst->buf->data);
 		if (length < s_len && length < d_len) {
 			len = length;
 		} else {
@@ -1921,10 +1936,10 @@ int net_pkt_pull(struct net_pkt *pkt, size_t length)
 	return 0;
 }
 
-u16_t net_pkt_get_current_offset(struct net_pkt *pkt)
+uint16_t net_pkt_get_current_offset(struct net_pkt *pkt)
 {
 	struct net_buf *buf = pkt->buffer;
-	u16_t offset;
+	uint16_t offset;
 
 	if (!pkt->cursor.buf || !pkt->cursor.pos) {
 		return 0;
@@ -1944,6 +1959,13 @@ u16_t net_pkt_get_current_offset(struct net_pkt *pkt)
 
 bool net_pkt_is_contiguous(struct net_pkt *pkt, size_t size)
 {
+	size_t len = net_pkt_get_contiguous_len(pkt);
+
+	return len >= size;
+}
+
+size_t net_pkt_get_contiguous_len(struct net_pkt *pkt)
+{
 	pkt_cursor_advance(pkt, !net_pkt_is_being_overwritten(pkt));
 
 	if (pkt->cursor.buf && pkt->cursor.pos) {
@@ -1952,12 +1974,10 @@ bool net_pkt_is_contiguous(struct net_pkt *pkt, size_t size)
 		len = net_pkt_is_being_overwritten(pkt) ?
 			pkt->cursor.buf->len : pkt->cursor.buf->size;
 		len -= pkt->cursor.pos - pkt->cursor.buf->data;
-		if (len >= size) {
-			return true;
-		}
+		return len;
 	}
 
-	return false;
+	return 0;
 }
 
 void *net_pkt_get_data(struct net_pkt *pkt,

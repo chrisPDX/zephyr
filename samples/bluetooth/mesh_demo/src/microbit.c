@@ -29,9 +29,13 @@
 #define SEQ_PAGE     (NRF_FICR->CODEPAGESIZE * (NRF_FICR->CODESIZE - 1))
 #define SEQ_MAX      (NRF_FICR->CODEPAGESIZE * 8 * SEQ_PER_BIT)
 
-static struct device *gpio;
-static struct device *nvm;
-static struct device *pwm;
+static const struct gpio_dt_spec button_a =
+	GPIO_DT_SPEC_GET(DT_NODELABEL(buttona), gpios);
+static const struct gpio_dt_spec button_b =
+	GPIO_DT_SPEC_GET(DT_NODELABEL(buttonb), gpios);
+static const struct device *nvm =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
+static const struct device *pwm = DEVICE_DT_GET_ANY(nordic_nrf_sw_pwm);
 
 static struct k_work button_work;
 
@@ -41,15 +45,15 @@ static void button_send_pressed(struct k_work *work)
 	board_button_1_pressed();
 }
 
-static void button_pressed(struct device *dev, struct gpio_callback *cb,
-			   u32_t pins)
+static void button_pressed(const struct device *dev, struct gpio_callback *cb,
+			   uint32_t pins)
 {
 	struct mb_display *disp = mb_display_get();
 
-	if (pins & BIT(DT_GPIO_PIN(DT_ALIAS(sw0), gpios))) {
+	if (pins & BIT(button_a.pin)) {
 		k_work_submit(&button_work);
 	} else {
-		u16_t target = board_set_target();
+		uint16_t target = board_set_target();
 
 		if (target > 0x0009) {
 			mb_display_print(disp, MB_DISPLAY_MODE_SINGLE,
@@ -63,8 +67,8 @@ static void button_pressed(struct device *dev, struct gpio_callback *cb,
 
 static const struct {
 	char  note;
-	u32_t period;
-	u32_t sharp;
+	uint32_t period;
+	uint32_t sharp;
 } period_map[] = {
 	{ 'C',  3822,  3608 },
 	{ 'D',  3405,  3214 },
@@ -75,7 +79,7 @@ static const struct {
 	{ 'B',  2025,  2025 },
 };
 
-static u32_t get_period(char note, bool sharp)
+static uint32_t get_period(char note, bool sharp)
 {
 	int i;
 
@@ -101,7 +105,7 @@ static u32_t get_period(char note, bool sharp)
 void board_play_tune(const char *str)
 {
 	while (*str) {
-		u32_t period, duration = 0U;
+		uint32_t period, duration = 0U;
 
 		while (*str && !isdigit((unsigned char)*str)) {
 			str++;
@@ -137,7 +141,7 @@ void board_play_tune(const char *str)
 	}
 }
 
-void board_heartbeat(u8_t hops, u16_t feat)
+void board_heartbeat(uint8_t hops, uint16_t feat)
 {
 	struct mb_display *disp = mb_display_get();
 	const struct mb_image hops_img[] = {
@@ -177,7 +181,7 @@ void board_heartbeat(u8_t hops, u16_t feat)
 	}
 }
 
-void board_other_dev_pressed(u16_t addr)
+void board_other_dev_pressed(uint16_t addr)
 {
 	struct mb_display *disp = mb_display_get();
 
@@ -222,36 +226,54 @@ void board_attention(bool attention)
 	}
 }
 
-static void configure_button(void)
+static int configure_button(const struct gpio_dt_spec *button)
+{
+	int err;
+
+	err = gpio_pin_configure_dt(button, GPIO_INPUT);
+	if (err) {
+		return err;
+	}
+	return gpio_pin_interrupt_configure_dt(button, GPIO_INT_EDGE_TO_ACTIVE);
+}
+
+static int configure_buttons(void)
 {
 	static struct gpio_callback button_cb;
+	int err;
 
 	k_work_init(&button_work, button_send_pressed);
 
-	gpio = device_get_binding(DT_GPIO_LABEL(DT_ALIAS(sw0), gpios));
+	err = configure_button(&button_a);
+	if (err) {
+		return err;
+	}
 
-	gpio_pin_configure(gpio, DT_GPIO_PIN(DT_ALIAS(sw0), gpios),
-			   GPIO_INPUT | DT_GPIO_FLAGS(DT_ALIAS(sw0), gpios));
-	gpio_pin_interrupt_configure(gpio, DT_GPIO_PIN(DT_ALIAS(sw0), gpios),
-				     GPIO_INT_EDGE_TO_ACTIVE);
+	err = configure_button(&button_b);
+	if (err) {
+		return err;
+	}
 
-	gpio_pin_configure(gpio, DT_GPIO_PIN(DT_ALIAS(sw1), gpios),
-			   GPIO_INPUT | DT_GPIO_FLAGS(DT_ALIAS(sw1), gpios));
-	gpio_pin_interrupt_configure(gpio, DT_GPIO_PIN(DT_ALIAS(sw1), gpios),
-				     GPIO_INT_EDGE_TO_ACTIVE);
+	if (button_a.port != button_b.port) {
+		/* These should be the same device on this board. */
+		return -EINVAL;
+	}
 
 	gpio_init_callback(&button_cb, button_pressed,
-			   BIT(DT_GPIO_PIN(DT_ALIAS(sw0), gpios)) |
-			   BIT(DT_GPIO_PIN(DT_ALIAS(sw1), gpios)));
-	gpio_add_callback(gpio, &button_cb);
+			   BIT(button_a.pin) | BIT(button_b.pin));
+	return gpio_add_callback(button_a.port, &button_cb);
 }
 
-void board_init(u16_t *addr)
+int board_init(uint16_t *addr)
 {
 	struct mb_display *disp = mb_display_get();
 
-	nvm = device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
-	pwm = device_get_binding(DT_LABEL(DT_INST(0, nordic_nrf_sw_pwm)));
+	if (!(device_is_ready(nvm) && device_is_ready(pwm) &&
+	      device_is_ready(button_a.port) &&
+	      device_is_ready(button_b.port))) {
+		printk("One or more devices are not ready\n");
+		return -ENODEV;
+	}
 
 	*addr = NRF_UICR->CUSTOMER[0];
 	if (!*addr || *addr == 0xffff) {
@@ -265,5 +287,5 @@ void board_init(u16_t *addr)
 	mb_display_print(disp, MB_DISPLAY_MODE_DEFAULT, SCROLL_SPEED,
 			 "0x%04x", *addr);
 
-	configure_button();
+	return configure_buttons();
 }

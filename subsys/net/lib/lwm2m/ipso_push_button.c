@@ -49,8 +49,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* resource state */
 struct ipso_button_data {
-	u64_t counter;
-	u16_t obj_inst_id;
+	uint64_t counter;
+	uint16_t obj_inst_id;
 	bool last_state;
 	bool state;
 };
@@ -72,7 +72,7 @@ static struct lwm2m_engine_res res[MAX_INSTANCE_COUNT][BUTTON_MAX_ID];
 static struct lwm2m_engine_res_inst
 			res_inst[MAX_INSTANCE_COUNT][RESOURCE_INSTANCE_COUNT];
 
-static int get_button_index(u16_t obj_inst_id)
+static int get_button_index(uint16_t obj_inst_id)
 {
 	int i, ret = -ENOENT;
 
@@ -88,9 +88,9 @@ static int get_button_index(u16_t obj_inst_id)
 	return ret;
 }
 
-static int state_post_write_cb(u16_t obj_inst_id,
-			       u16_t res_id, u16_t res_inst_id,
-			       u8_t *data, u16_t data_len,
+static int state_post_write_cb(uint16_t obj_inst_id,
+			       uint16_t res_id, uint16_t res_inst_id,
+			       uint8_t *data, uint16_t data_len,
 			       bool last_block, size_t total_size)
 {
 	int i;
@@ -109,7 +109,7 @@ static int state_post_write_cb(u16_t obj_inst_id,
 	return 0;
 }
 
-static struct lwm2m_engine_obj_inst *button_create(u16_t obj_inst_id)
+static struct lwm2m_engine_obj_inst *button_create(uint16_t obj_inst_id)
 {
 	int index, avail = -1, i = 0, j = 0;
 
@@ -143,10 +143,10 @@ static struct lwm2m_engine_obj_inst *button_create(u16_t obj_inst_id)
 
 	/* initialize instance resource data */
 	INIT_OBJ_RES(BUTTON_DIGITAL_STATE_ID, res[avail], i,
-		     res_inst[avail], j, 1, true,
+		     res_inst[avail], j, 1, false, true,
 		     &button_data[avail].state,
 		     sizeof(button_data[avail].state),
-		     NULL, NULL, state_post_write_cb, NULL);
+		     NULL, NULL, NULL, state_post_write_cb, NULL);
 	INIT_OBJ_RES_DATA(BUTTON_DIGITAL_INPUT_COUNTER_ID, res[avail], i,
 			  res_inst[avail], j,
 			  &button_data[avail].counter,
@@ -166,7 +166,7 @@ static struct lwm2m_engine_obj_inst *button_create(u16_t obj_inst_id)
 	return &inst[avail];
 }
 
-static int ipso_button_init(struct device *dev)
+static int ipso_button_init(const struct device *dev)
 {
 	onoff_switch.obj_id = IPSO_OBJECT_PUSH_BUTTON_ID;
 	onoff_switch.fields = fields;

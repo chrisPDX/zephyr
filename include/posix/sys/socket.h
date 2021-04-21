@@ -29,6 +29,7 @@ static inline int socketpair(int family, int type, int proto, int sv[2])
 
 #define MSG_PEEK ZSOCK_MSG_PEEK
 #define MSG_DONTWAIT ZSOCK_MSG_DONTWAIT
+#define MSG_WAITALL ZSOCK_MSG_WAITALL
 
 static inline int shutdown(int sock, int how)
 {
@@ -73,6 +74,12 @@ static inline ssize_t sendto(int sock, const void *buf, size_t len, int flags,
 	return zsock_sendto(sock, buf, len, flags, dest_addr, addrlen);
 }
 
+static inline ssize_t sendmsg(int sock, const struct msghdr *message,
+			      int flags)
+{
+	return zsock_sendmsg(sock, message, flags);
+}
+
 static inline ssize_t recvfrom(int sock, void *buf, size_t max_len, int flags,
 			       struct sockaddr *src_addr, socklen_t *addrlen)
 {
@@ -89,6 +96,12 @@ static inline int setsockopt(int sock, int level, int optname,
 			     const void *optval, socklen_t optlen)
 {
 	return zsock_setsockopt(sock, level, optname, optval, optlen);
+}
+
+static inline int getsockname(int sock, struct sockaddr *addr,
+			      socklen_t *addrlen)
+{
+	return zsock_getsockname(sock, addr, addrlen);
 }
 
 #ifdef __cplusplus

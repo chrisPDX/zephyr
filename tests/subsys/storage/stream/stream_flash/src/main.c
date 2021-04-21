@@ -24,22 +24,22 @@
 #define FLASH_BASE (64*1024)
 #define FLASH_AVAILABLE (FLASH_SIZE-FLASH_BASE)
 
-static struct device *fdev;
+static const struct device *fdev;
 static const struct flash_driver_api *api;
 static const struct flash_pages_layout *layout;
 static size_t layout_size;
 static struct stream_flash_ctx ctx;
 static int page_size;
-static u8_t *cb_buf;
+static uint8_t *cb_buf;
 static size_t cb_len;
 static size_t cb_offset;
 static int cb_ret;
 
-static u8_t buf[BUF_LEN];
-static u8_t read_buf[TESTBUF_SIZE];
-const static u8_t write_buf[TESTBUF_SIZE] = {[0 ... TESTBUF_SIZE - 1] = 0xaa};
-static u8_t written_pattern[TESTBUF_SIZE] = {[0 ... TESTBUF_SIZE - 1] = 0xaa};
-static u8_t erased_pattern[TESTBUF_SIZE]  = {[0 ... TESTBUF_SIZE - 1] = 0xff};
+static uint8_t buf[BUF_LEN];
+static uint8_t read_buf[TESTBUF_SIZE];
+const static uint8_t write_buf[TESTBUF_SIZE] = {[0 ... TESTBUF_SIZE - 1] = 0xaa};
+static uint8_t written_pattern[TESTBUF_SIZE] = {[0 ... TESTBUF_SIZE - 1] = 0xaa};
+static uint8_t erased_pattern[TESTBUF_SIZE]  = {[0 ... TESTBUF_SIZE - 1] = 0xff};
 
 #define VERIFY_BUF(start, size, buf) \
 do { \
@@ -51,7 +51,7 @@ do { \
 #define VERIFY_WRITTEN(start, size) VERIFY_BUF(start, size, written_pattern)
 #define VERIFY_ERASED(start, size) VERIFY_BUF(start, size, erased_pattern)
 
-int stream_flash_callback(u8_t *buf, size_t len, size_t offset)
+int stream_flash_callback(uint8_t *buf, size_t len, size_t offset)
 {
 	if (cb_buf) {
 		zassert_equal(cb_buf, buf, "incorrect buf");
@@ -270,6 +270,21 @@ static void test_stream_flash_buf_size_greater_than_page_size(void)
 	zassert_true(rc < 0, "expected failure");
 }
 
+static int bad_read(const struct device *dev, off_t off, void *data, size_t len)
+{
+	return -EINVAL;
+}
+
+static int fake_write(const struct device *dev, off_t off, const void *data, size_t len)
+{
+	return 0;
+}
+
+static int bad_write(const struct device *dev, off_t off, const void *data, size_t len)
+{
+	return -EINVAL;
+}
+
 static void test_stream_flash_buffered_write_callback(void)
 {
 	int rc;
@@ -304,6 +319,60 @@ static void test_stream_flash_buffered_write_callback(void)
 	cb_buf = NULL; /* Don't verify other parameters of the callback */
 	rc = stream_flash_buffered_write(&ctx, write_buf, BUF_LEN, true);
 	zassert_equal(rc, -EFAULT, "expected failure from callback");
+	/* Expect that the BUF_LEN of bytes got stuck in buffer as the  verification callback
+	 * failed.
+	 */
+	zassert_equal(ctx.buf_bytes, BUF_LEN, "Expected bytes to be left in buffer");
+
+	struct device fake_dev = *ctx.fdev;
+	struct flash_driver_api fake_api = *(struct flash_driver_api *)ctx.fdev->api;
+	struct stream_flash_ctx bad_ctx = ctx;
+	struct stream_flash_ctx cmp_ctx;
+
+	fake_api.read = bad_read;
+	/* Using fake write here because after previous write, with faked callback failure,
+	 * the flash is already written and real flash_write would cause failure.
+	 */
+	fake_api.write = fake_write;
+	fake_dev.api = &fake_api;
+	bad_ctx.fdev = &fake_dev;
+	/* Triger erase attempt */
+	cmp_ctx = bad_ctx;
+	/* Just flush buffer */
+	rc = stream_flash_buffered_write(&bad_ctx, write_buf, 0, true);
+	zassert_equal(rc, -EINVAL, "expected failure from flash_sync", rc);
+	zassert_equal(ctx.buf_bytes, BUF_LEN, "Expected bytes to be left in buffer");
+
+	/* Pretend flashed context and attempt write write block - 1 bytes to trigger unaligned
+	 * write; the write needs to fail so that we could check that context does not get modified.
+	 */
+	fake_api.write = bad_write;
+	bad_ctx.callback = NULL;
+	bad_ctx.buf_bytes = 0;
+	cmp_ctx = bad_ctx;
+	size_t wblock = flash_get_write_block_size(ctx.fdev);
+	size_t tow = (wblock == 1) ? 1 : wblock - 1;
+
+	rc = stream_flash_buffered_write(&bad_ctx, write_buf, tow, true);
+	zassert_equal(rc, -EINVAL, "expected failure from flash_sync", rc);
+	zassert_equal(cmp_ctx.bytes_written, bad_ctx.bytes_written,
+		      "Expected bytes_written not modified");
+	/* The write failed but bytes have already been added to buffer and buffer offset
+	 * increased.
+	 */
+	zassert_equal(bad_ctx.buf_bytes, cmp_ctx.buf_bytes + tow,
+		      "Expected %d bytes added to buffer", tow);
+}
+
+static void test_stream_flash_flush(void)
+{
+	int rc;
+
+	init_target();
+
+	/* Perform flush with NULL data pointer and 0 lentgth */
+	rc = stream_flash_buffered_write(&ctx, NULL, 0, true);
+	zassert_equal(rc, 0, "expected success");
 }
 
 #ifdef CONFIG_STREAM_FLASH_ERASE
@@ -337,6 +406,12 @@ static void test_stream_flash_buffered_write_whole_page(void)
 	VERIFY_WRITTEN(page_size, page_size);
 }
 
+/* Erase that never completes successfully */
+static int bad_erase(const struct device *dev, off_t offset, size_t size)
+{
+	return -EINVAL;
+}
+
 static void test_stream_flash_erase_page(void)
 {
 	int rc;
@@ -351,6 +426,29 @@ static void test_stream_flash_erase_page(void)
 	zassert_equal(rc, 0, "expected success");
 
 	VERIFY_ERASED(FLASH_BASE, page_size);
+
+	/*
+	 * Test failure in erase does not change context.
+	 * The test is done by replacing erase function of device API with fake
+	 * one that returns with an error, invoking the erase procedure
+	 * and than comparing state of context prior to call to the one after.
+	 */
+	struct device fake_dev = *ctx.fdev;
+	struct flash_driver_api fake_api = *(struct flash_driver_api *)ctx.fdev->api;
+	struct stream_flash_ctx bad_ctx = ctx;
+	struct stream_flash_ctx cmp_ctx;
+
+	fake_api.erase = bad_erase;
+	fake_dev.api = &fake_api;
+	bad_ctx.fdev = &fake_dev;
+	/* Triger erase attempt */
+	bad_ctx.last_erased_page_start_offset = FLASH_BASE - 16;
+	cmp_ctx = bad_ctx;
+
+	rc = stream_flash_erase_page(&bad_ctx, FLASH_BASE);
+	zassert_equal(memcmp(&bad_ctx, &cmp_ctx, sizeof(bad_ctx)), 0,
+		      "Ctx should not get altered");
+	zassert_equal(rc, -EINVAL, "Expected failure");
 }
 #else
 static void test_stream_flash_erase_page(void)
@@ -367,7 +465,7 @@ static void test_stream_flash_buffered_write_whole_page(void)
 void test_main(void)
 {
 	fdev = device_get_binding(FLASH_NAME);
-	api = fdev->driver_api;
+	api = fdev->api;
 	api->page_layout(fdev, &layout, &layout_size);
 
 	page_size = layout->pages_size;
@@ -381,6 +479,7 @@ void test_main(void)
 	     ztest_unit_test(test_stream_flash_buffered_write_multi_page),
 	     ztest_unit_test(test_stream_flash_buf_size_greater_than_page_size),
 	     ztest_unit_test(test_stream_flash_buffered_write_callback),
+	     ztest_unit_test(test_stream_flash_flush),
 	     ztest_unit_test(test_stream_flash_buffered_write_whole_page),
 	     ztest_unit_test(test_stream_flash_erase_page),
 	     ztest_unit_test(test_stream_flash_bytes_written)

@@ -11,46 +11,45 @@
 #define NUM_THREAD 4
 static K_THREAD_STACK_ARRAY_DEFINE(tstack, NUM_THREAD, STACK_SIZE);
 static struct k_thread tdata[NUM_THREAD];
-/*for those not supporting tickless idle*/
-#ifndef CONFIG_TICKLESS_IDLE
-#define CONFIG_TICKLESS_IDLE_THRESH 20
-#endif
+
+#define IDLE_THRESH 20
+
 /*sleep duration tickless*/
-#define SLEEP_TICKLESS	 k_ticks_to_ms_floor64(CONFIG_TICKLESS_IDLE_THRESH)
+#define SLEEP_TICKLESS	 k_ticks_to_ms_floor64(IDLE_THRESH)
 
 /*sleep duration with tick*/
-#define SLEEP_TICKFUL	 k_ticks_to_ms_floor64(CONFIG_TICKLESS_IDLE_THRESH - 1)
+#define SLEEP_TICKFUL	 k_ticks_to_ms_floor64(IDLE_THRESH - 1)
 
 /*slice size is set as half of the sleep duration*/
-#define SLICE_SIZE	 k_ticks_to_ms_floor64(CONFIG_TICKLESS_IDLE_THRESH >> 1)
+#define SLICE_SIZE	 k_ticks_to_ms_floor64(IDLE_THRESH >> 1)
 
 /*maximum slice duration accepted by the test*/
-#define SLICE_SIZE_LIMIT k_ticks_to_ms_floor64((CONFIG_TICKLESS_IDLE_THRESH >> 1) + 1)
+#define SLICE_SIZE_LIMIT k_ticks_to_ms_floor64((IDLE_THRESH >> 1) + 1)
 
 /*align to millisecond boundary*/
 #if defined(CONFIG_ARCH_POSIX)
 #define ALIGN_MS_BOUNDARY()		       \
 	do {				       \
-		u32_t t = k_uptime_get_32();   \
+		uint32_t t = k_uptime_get_32();   \
 		while (t == k_uptime_get_32()) \
 			k_busy_wait(50);       \
 	} while (0)
 #else
 #define ALIGN_MS_BOUNDARY()		       \
 	do {				       \
-		u32_t t = k_uptime_get_32();   \
+		uint32_t t = k_uptime_get_32();   \
 		while (t == k_uptime_get_32()) \
 			;		       \
 	} while (0)
 #endif
 K_SEM_DEFINE(sema, 0, NUM_THREAD);
-static s64_t elapsed_slice;
+static int64_t elapsed_slice;
 
 static void thread_tslice(void *p1, void *p2, void *p3)
 {
-	s64_t t = k_uptime_delta(&elapsed_slice);
+	int64_t t = k_uptime_delta(&elapsed_slice);
 
-	TC_PRINT("elapsed slice %lld, expected: <%lld, %lld>\n",
+	TC_PRINT("elapsed slice %" PRId64 ", expected: <%" PRId64 ", %" PRId64 ">\n",
 		t, SLICE_SIZE, SLICE_SIZE_LIMIT);
 
 	/**TESTPOINT: verify slicing scheduler behaves as expected*/
@@ -75,7 +74,7 @@ static void thread_tslice(void *p1, void *p2, void *p3)
  */
 void test_tickless_sysclock(void)
 {
-	volatile u32_t t0, t1;
+	volatile uint32_t t0, t1;
 
 	ALIGN_MS_BOUNDARY();
 	t0 = k_uptime_get_32();

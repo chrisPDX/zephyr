@@ -6,6 +6,8 @@
 #ifndef __INC_SOC_H
 #define __INC_SOC_H
 
+#include <arch/xtensa/cache.h>
+
 /* macros related to interrupt handling */
 #define XTENSA_IRQ_NUM_SHIFT			0
 #define CAVS_IRQ_NUM_SHIFT			8
@@ -62,14 +64,6 @@
 #define DMA_HANDSHAKE_SSP3_TX			8
 #define DMA_HANDSHAKE_SSP3_RX			9
 
-/* DMA Channel Allocation
- * FIXME: I2S Driver assigns channel in Kconfig.
- * Perhaps DTS is a better option
- */
-#define DMIC_DMA_DEV_NAME			CONFIG_DMA_0_NAME
-#define DMA_CHANNEL_DMIC_RXA			0
-#define DMA_CHANNEL_DMIC_RXB			1
-
 /* I2S */
 #define I2S_CAVS_IRQ(i2s_num)			\
 	SOC_AGGREGATE_IRQ(0, (i2s_num) + 1, CAVS_L2_AGG_INT_LEVEL5)
@@ -92,9 +86,9 @@
 #define SOC_MDIVXR_SET_DIVIDER_BYPASS		BIT_MASK(12)
 
 struct soc_mclk_control_regs {
-	u32_t	mdivctrl;
-	u32_t	reserved[31];
-	u32_t	mdivxr[SOC_NUM_MCLK_OUTPUTS];
+	uint32_t	mdivctrl;
+	uint32_t	reserved[31];
+	uint32_t	mdivxr[SOC_NUM_MCLK_OUTPUTS];
 };
 
 #define PDM_BASE				0x00010000
@@ -127,11 +121,11 @@ struct soc_mclk_control_regs {
 
 struct soc_resource_alloc_regs {
 	union {
-		u16_t	lpgpdmacxo[SOC_NUM_LPGPDMAC];
-		u16_t	reserved[4];
+		uint16_t	lpgpdmacxo[SOC_NUM_LPGPDMAC];
+		uint16_t	reserved[4];
 	};
-	u32_t	dspiopo;
-	u32_t	geno;
+	uint32_t	dspiopo;
+	uint32_t	geno;
 };
 
 /* L2 Local Memory Registers */
@@ -145,8 +139,8 @@ struct soc_resource_alloc_regs {
 #define SOC_DMIC_SHIM_DMICLCTL_CPA		BIT(8)
 
 struct soc_dmic_shim_regs {
-	u32_t	dmiclcap;
-	u32_t	dmiclctl;
+	uint32_t	dmiclcap;
+	uint32_t	dmiclctl;
 };
 
 /* SOC DSP SHIM Registers */
@@ -160,40 +154,40 @@ struct soc_dmic_shim_regs {
 #define SOC_PWRCTL_DISABLE_PWR_GATING_DSP1	BIT(1)
 
 struct soc_dsp_shim_regs {
-	u32_t	reserved[8];
+	uint32_t	reserved[8];
 	union {
 		struct {
-			u32_t walclk32_lo;
-			u32_t walclk32_hi;
+			uint32_t walclk32_lo;
+			uint32_t walclk32_hi;
 		};
-		u64_t	walclk;
+		uint64_t	walclk;
 	};
-	u32_t	dspwctcs;
-	u32_t	reserved1[1];
+	uint32_t	dspwctcs;
+	uint32_t	reserved1[1];
 	union {
 		struct {
-			u32_t dspwct0c32_lo;
-			u32_t dspwct0c32_hi;
+			uint32_t dspwct0c32_lo;
+			uint32_t dspwct0c32_hi;
 		};
-		u64_t	dspwct0c;
+		uint64_t	dspwct0c;
 	};
 	union {
 		struct {
-			u32_t dspwct1c32_lo;
-			u32_t dspwct1c32_hi;
+			uint32_t dspwct1c32_lo;
+			uint32_t dspwct1c32_hi;
 		};
-		u64_t	dspwct1c;
+		uint64_t	dspwct1c;
 	};
-	u32_t	reserved2[14];
-	u32_t	clkctl;
-	u32_t	clksts;
-	u32_t	reserved3[4];
-	u16_t	pwrctl;
-	u16_t	pwrsts;
-	u32_t	lpsctl;
-	u32_t	lpsdmas0;
-	u32_t	lpsdmas1;
-	u32_t	reserved4[22];
+	uint32_t	reserved2[14];
+	uint32_t	clkctl;
+	uint32_t	clksts;
+	uint32_t	reserved3[4];
+	uint16_t	pwrctl;
+	uint16_t	pwrsts;
+	uint32_t	lpsctl;
+	uint32_t	lpsdmas0;
+	uint32_t	lpsdmas1;
+	uint32_t	reserved4[22];
 };
 
 /* Global Control registers */
@@ -214,24 +208,24 @@ struct soc_dsp_shim_regs {
 #define SOC_S1000_STRAP_REF_CLK_24P576		(2 << 3)
 
 struct soc_global_regs {
-	u32_t	reserved1[5];
-	u32_t	cavs_dsp1power_control;
-	u32_t	reserved2[2];
-	u32_t	gna_power_control;
-	u32_t	reserved3[7];
-	u32_t	straps;
+	uint32_t	reserved1[5];
+	uint32_t	cavs_dsp1power_control;
+	uint32_t	reserved2[2];
+	uint32_t	gna_power_control;
+	uint32_t	reserved3[7];
+	uint32_t	straps;
 };
 
 /* macros for data cache operations */
 #define SOC_DCACHE_FLUSH(addr, size)		\
-	xthal_dcache_region_writeback((addr), (size))
+	z_xtensa_cache_flush((addr), (size))
 #define SOC_DCACHE_INVALIDATE(addr, size)	\
-	xthal_dcache_region_invalidate((addr), (size))
+	z_xtensa_cache_inv((addr), (size))
 
-extern void z_soc_irq_enable(u32_t irq);
-extern void z_soc_irq_disable(u32_t irq);
+extern void z_soc_irq_enable(uint32_t irq);
+extern void z_soc_irq_disable(uint32_t irq);
 extern int z_soc_irq_is_enabled(unsigned int irq);
 
-extern u32_t soc_get_ref_clk_freq(void);
+extern uint32_t soc_get_ref_clk_freq(void);
 
 #endif /* __INC_SOC_H */

@@ -44,7 +44,7 @@
 #define CHECK_DT_REG(lbl, mdk_addr)					\
 	BUILD_ASSERT(							\
 		UTIL_OR(UTIL_NOT(DT_NODE_EXISTS(DT_NODELABEL(lbl))),	\
-			(DT_REG_ADDR(DT_NODELABEL(lbl)) == (u32_t)(mdk_addr))))
+			(DT_REG_ADDR(DT_NODELABEL(lbl)) == (uint32_t)(mdk_addr))))
 
 /**
  * If a node label "lbl" might have different addresses depending on
@@ -81,6 +81,7 @@ CHECK_DT_REG(adc, NODE_ADDRESS(adc, nordic_nrf_adc, NRF_ADC, NRF_SAADC));
 CHECK_DT_REG(clock, NRF_CLOCK);
 CHECK_DT_REG(cryptocell, NRF_CRYPTOCELL);
 CHECK_DT_REG(dppic, NRF_DPPIC);
+CHECK_DT_REG(ecb, NRF_ECB);
 CHECK_DT_REG(egu0, NRF_EGU0);
 CHECK_DT_REG(egu1, NRF_EGU1);
 CHECK_DT_REG(egu2, NRF_EGU2);

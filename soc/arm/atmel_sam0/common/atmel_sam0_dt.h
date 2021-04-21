@@ -29,15 +29,19 @@
 	ATMEL_SAM0_DT_INST_DMA_CELL(n, name, trigsrc)
 #define ATMEL_SAM0_DT_INST_DMA_CHANNEL(n, name) \
 	ATMEL_SAM0_DT_INST_DMA_CELL(n, name, channel)
-#define ATMEL_SAM0_DT_INST_DMA_NAME(n, name)			\
+#define ATMEL_SAM0_DT_INST_DMA_CTLR(n, name)			\
 	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, dmas),		\
-		    (DT_INST_DMAS_LABEL_BY_NAME(n, name)),	\
-		    (NULL))
+		    (DT_INST_DMAS_CTLR_BY_NAME(n, name)),	\
+		    (DT_INVALID_NODE))
 
 
 /* Use to check if a sercom 'n' is enabled for a given 'compat' */
 #define ATMEL_SAM0_DT_SERCOM_CHECK(n, compat) \
 	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(sercom##n), compat, okay)
+
+/* Use to check if TCC 'n' is enabled for a given 'compat' */
+#define ATMEL_SAM0_DT_TCC_CHECK(n, compat) \
+	DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(tcc##n), compat, okay)
 
 /* Common macro for use to set HCLK_FREQ_HZ */
 #define ATMEL_SAM0_DT_CPU_CLK_FREQ_HZ \

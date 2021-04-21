@@ -81,8 +81,8 @@
 
 &i2c0 {
 	status = "okay";
-	sda-pin = <0>;
-	scl-pin = <1>;
+	sda-gpios = <&gpio0 0 0>;
+	scl-gpios = <&gpio0 1 0>;
 	/* smba-pin = <2>; */
 };
 
@@ -92,7 +92,7 @@
 	sck-pin = <25>;
 	mosi-pin = <24>;
 	miso-pin = <23>;
-	cs-gpios = <&gpio0 30 0>;
+	cs-gpios = <&gpio0 30 GPIO_ACTIVE_LOW>;
 };
 
 &uart0 {

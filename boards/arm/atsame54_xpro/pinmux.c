@@ -8,12 +8,17 @@
 #include <drivers/pinmux.h>
 #include <soc.h>
 
-static int board_pinmux_init(struct device *dev)
+static int board_pinmux_init(const struct device *dev)
 {
-	struct device *muxa = device_get_binding("PINMUX_A");
-	struct device *muxb = device_get_binding("PINMUX_B");
-	struct device *muxc = device_get_binding("PINMUX_C");
-	struct device *muxd = device_get_binding("PINMUX_D");
+	const struct device *muxa = DEVICE_DT_GET(DT_NODELABEL(pinmux_a));
+	const struct device *muxb = DEVICE_DT_GET(DT_NODELABEL(pinmux_b));
+	const struct device *muxc = DEVICE_DT_GET(DT_NODELABEL(pinmux_c));
+	const struct device *muxd = DEVICE_DT_GET(DT_NODELABEL(pinmux_d));
+
+	__ASSERT_NO_MSG(device_is_ready(muxa));
+	__ASSERT_NO_MSG(device_is_ready(muxb));
+	__ASSERT_NO_MSG(device_is_ready(muxc));
+	__ASSERT_NO_MSG(device_is_ready(muxd));
 
 	ARG_UNUSED(dev);
 	ARG_UNUSED(muxa);
@@ -103,6 +108,11 @@ static int board_pinmux_init(struct device *dev)
 #if (ATMEL_SAM0_DT_SERCOM_CHECK(7, atmel_sam0_i2c) && CONFIG_I2C_SAM0)
 	pinmux_pin_set(muxd, 8, PINMUX_FUNC_C);
 	pinmux_pin_set(muxd, 9, PINMUX_FUNC_C);
+#endif
+
+#if (ATMEL_SAM0_DT_TCC_CHECK(0, atmel_sam0_tcc_pwm) && CONFIG_PWM_SAM0_TCC)
+	/* TCC0 on WO2=PC18 */
+	pinmux_pin_set(muxc, 18, PINMUX_FUNC_F);
 #endif
 
 #ifdef CONFIG_USB_DC_SAM0

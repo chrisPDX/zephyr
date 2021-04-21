@@ -21,22 +21,18 @@
 extern "C" {
 #endif
 
-#if defined(CONFIG_BT_CTLR_TX_BUFFER_SIZE)
-#define BT_L2CAP_MTU (CONFIG_BT_CTLR_TX_BUFFER_SIZE - BT_L2CAP_HDR_SIZE)
-#else
-#define BT_L2CAP_MTU 65 /* 64-byte public key + opcode */
-#endif /* CONFIG_BT_CTLR */
+#define _BT_ACL_BUF_SIZE(len) (BT_BUF_RESERVE + \
+				BT_HCI_ACL_HDR_SIZE + \
+				(len))
 
 /** Data size needed for ACL buffers */
-#define BT_BUF_ACL_SIZE BT_L2CAP_BUF_SIZE(BT_L2CAP_MTU)
+#define BT_BUF_ACL_SIZE _BT_ACL_BUF_SIZE(CONFIG_BT_HCI_ACL_DATA_SIZE)
 
 #if defined(CONFIG_BT_CTLR_TX_BUFFERS)
 #define BT_HCI_ACL_COUNT CONFIG_BT_CTLR_TX_BUFFERS
 #else
 #define BT_HCI_ACL_COUNT 6
 #endif
-
-#define BT_BUF_TX_SIZE MAX(BT_BUF_RX_SIZE, BT_BUF_ACL_SIZE)
 
 /** @brief Send packet to the Bluetooth controller
  *
@@ -74,7 +70,7 @@ enum {
  *
  *  @return Zero on success or (negative) error code otherwise.
  */
-int bt_hci_raw_set_mode(u8_t mode);
+int bt_hci_raw_set_mode(uint8_t mode);
 
 /** @brief Get Bluetooth RAW channel mode
  *
@@ -82,7 +78,7 @@ int bt_hci_raw_set_mode(u8_t mode);
  *
  *  @return Access mode.
  */
-u8_t bt_hci_raw_get_mode(void);
+uint8_t bt_hci_raw_get_mode(void);
 
 #define BT_HCI_ERR_EXT_HANDLED  0xff
 
@@ -101,7 +97,7 @@ u8_t bt_hci_raw_get_mode(void);
 
 struct bt_hci_raw_cmd_ext {
 	/** Opcode of the command */
-	u16_t  op;
+	uint16_t  op;
 
 	/** Minimal length of the command */
 	size_t min_len;
@@ -117,7 +113,7 @@ struct bt_hci_raw_cmd_ext {
 	 *  BT_HCI_ERR_SUCCESS which just indicates that the command can be
 	 *  sent to the controller to be processed.
 	 */
-	u8_t   (*func)(struct net_buf *buf);
+	uint8_t   (*func)(struct net_buf *buf);
 };
 
 /** @brief Register Bluetooth RAW command extension table

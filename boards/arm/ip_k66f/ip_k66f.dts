@@ -15,6 +15,7 @@
 	aliases {
 		led0 = &red0_led;
 		led2 = &red2_led;
+		dsa-spi = &spi1;
 	};
 
 	chosen {
@@ -41,6 +42,19 @@
 	clock-frequency = <120000000>;
 };
 
+&sim {
+	pllfll-select = <KINETIS_SIM_PLLFLLSEL_MCGPLLCLK>;
+	er32k-select = <KINETIS_SIM_ER32KSEL_RTC>;
+
+	bus_clk {
+		clock-div = <3>;
+	};
+
+	flash_clk {
+		clock-div = <7>;
+	};
+};
+
 &gpioa {
 	status = "okay";
 };
@@ -50,10 +64,7 @@
 };
 
 &flash0 {
-	/*
-	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
-	 */
+
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
@@ -88,4 +99,58 @@
 			reg = <0x000e0000 0x00020000>;
 		};
 	};
+};
+
+&enet {
+	status = "okay";
+
+	fixed-link {
+		speed = <100>;
+		full-duplex;
+	};
+};
+
+&spi1 {
+	status = "okay";
+
+	clock-frequency = <44000000>;
+	cs-gpios = <&gpioe 4 GPIO_ACTIVE_LOW>;
+
+	ksz8794: dsa@0 {
+		compatible = "microchip,ksz8794";
+		reg = <0>;
+
+		label = "dsa";
+		spi-max-frequency = <44000000>;
+		reset-gpios = <&gpiob 22 GPIO_ACTIVE_LOW>;
+
+		spi-cpol;
+		spi-cpha;
+		dsa-master-port = <&enet>;
+		dsa-slave-ports = <3>;
+
+		lan3: lan_3 {
+			label = "lan3";
+		};
+
+		lan2: lan_2 {
+			label = "lan2";
+		};
+
+		lan1: lan_1 {
+			label = "lan1";
+		};
+	};
+};
+
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioe {
+	status = "okay";
 };

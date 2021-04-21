@@ -8,8 +8,14 @@
 #include <sys/printk.h>
 #include <drivers/dac.h>
 
-#if defined(CONFIG_BOARD_NUCLEO_L073RZ)
-#define DAC_DEVICE_NAME		DT_LABEL(DT_ALIAS(dac1))
+#if defined(CONFIG_BOARD_NUCLEO_F091RC) || \
+	defined(CONFIG_BOARD_NUCLEO_G071RB) || \
+	defined(CONFIG_BOARD_NUCLEO_G431RB) || \
+	defined(CONFIG_BOARD_NUCLEO_L073RZ) || \
+	defined(CONFIG_BOARD_NUCLEO_L152RE) || \
+	defined(CONFIG_BOARD_NUCLEO_F767ZI) || \
+	defined(CONFIG_BOARD_RONOTH_LODEV)
+#define DAC_DEVICE_NAME		DT_LABEL(DT_NODELABEL(dac1))
 #define DAC_CHANNEL_ID		1
 #define DAC_RESOLUTION		12
 #elif defined(CONFIG_BOARD_TWR_KE18F)
@@ -20,6 +26,14 @@
 #define DAC_DEVICE_NAME		DT_LABEL(DT_NODELABEL(dac0))
 #define DAC_CHANNEL_ID		0
 #define DAC_RESOLUTION		12
+#elif defined(CONFIG_BOARD_FRDM_K22F)
+#define DAC_DEVICE_NAME		DT_LABEL(DT_NODELABEL(dac0))
+#define DAC_CHANNEL_ID		0
+#define DAC_RESOLUTION		12
+#elif defined(CONFIG_BOARD_ARDUINO_ZERO)
+#define DAC_DEVICE_NAME		DT_LABEL(DT_NODELABEL(dac0))
+#define DAC_CHANNEL_ID		0
+#define DAC_RESOLUTION		10
 #else
 #error "Unsupported board."
 #endif
@@ -31,7 +45,7 @@ static const struct dac_channel_cfg dac_ch_cfg = {
 
 void main(void)
 {
-	struct device *dac_dev = device_get_binding(DAC_DEVICE_NAME);
+	const struct device *dac_dev = device_get_binding(DAC_DEVICE_NAME);
 
 	if (!dac_dev) {
 		printk("Cannot get DAC device\n");
@@ -62,7 +76,11 @@ void main(void)
 			4096 / dac_values : 1;
 
 		for (int i = 0; i < dac_values; i++) {
-			dac_write_value(dac_dev, DAC_CHANNEL_ID, i);
+			ret = dac_write_value(dac_dev, DAC_CHANNEL_ID, i);
+			if (ret != 0) {
+				printk("dac_write_value() failed with code %d\n", ret);
+				return;
+			}
 			k_sleep(K_MSEC(sleep_time));
 		}
 	}

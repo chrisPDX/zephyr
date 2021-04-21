@@ -10,7 +10,7 @@
  * What we create here is a data structure:
  *
  * struct {
- *	u32_t num_vectors;       <- typically CONFIG_NUM_IRQS
+ *	uint32_t num_vectors;       <- typically CONFIG_NUM_IRQS
  *	struct _isr_list isrs[]; <- Usually of smaller size than num_vectors
  * }
  *
@@ -36,11 +36,11 @@ SECTION_PROLOGUE(.intList,,)
 {
 	KEEP(*(.irq_info))
 	KEEP(*(.intList))
-} GROUP_LINK_IN(IDT_LIST)
+} GROUP_ROM_LINK_IN(IDT_LIST, IDT_LIST)
 #else
 /DISCARD/ :
 {
-	KEEP(*(.irq_info))
-	KEEP(*(.intList))
+	KEEP(*(.irq_info*))
+	KEEP(*(.intList*))
 }
 #endif

@@ -67,7 +67,7 @@
 	location-tx = <GECKO_LOCATION(11) GECKO_PORT_C GECKO_PIN(6)>;
 	location-clk = <GECKO_LOCATION(11) GECKO_PORT_C GECKO_PIN(8)>;
 
-	cs-gpios = <&gpioa 4 0>;
+	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>;
 
 	status = "okay";
 
@@ -77,7 +77,6 @@
 		reg = <0>;
 		spi-max-frequency = <33000000>;
 		size = <0x800000>;
-		has-be32k;
 		jedec-id = [c2 28 14];
 	};
 };
